@@ -38,12 +38,11 @@ endif
 PLATFORM ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')
 
 CFLAGS ?= -O3
-
 ifneq ($(wildcard uapi/$(PLATFORM)/.),)
-CFLAGS += -I uapi/$(PLATFORM)
+CFLAGS += -idirafter uapi/$(PLATFORM)
 endif
 CFLAGS += -std=gnu99 -D_GNU_SOURCE
-CFLAGS += -Wall -Wextra 
+CFLAGS += -Wall -Wextra
 CFLAGS += -MMD -MP
 CFLAGS += -DRUNSTATEDIR="\"$(RUNSTATEDIR)\""
 ifeq ($(DEBUG),yes)
@@ -63,7 +62,7 @@ ifeq ($(PLATFORM),windows)
 CC := x86_64-w64-mingw32-clang
 WINDRES := $(shell $(CC) $(CFLAGS) -print-prog-name=windres 2>/dev/null)
 CFLAGS += -Iwincompat/include -include wincompat/compat.h -DWINVER=0x0601 -D_WIN32_WINNT=0x0601 -flto
-LDLIBS += -lws2_32 -lsetupapi -lole32 -ladvapi32 -lntdll -Lwincompat
+LDLIBS += -lws2_32 -lsetupapi -lole32 -ladvapi32 -Lwincompat
 LDFLAGS += -flto -Wl,--dynamicbase -Wl,--nxcompat -Wl,--tsaware -mconsole
 LDFLAGS += -Wl,--major-os-version=6 -Wl,--minor-os-version=1 -Wl,--major-subsystem-version=6 -Wl,--minor-subsystem-version=1
 # The use of -Wl,/delayload: here implies we're using llvm-mingw
