@@ -114,7 +114,7 @@ enum mnl_attr_data_type {
 #define mnl_attr_for_each(attr, nlh, offset) \
 	for ((attr) = mnl_nlmsg_get_payload_offset((nlh), (offset)); \
 	     mnl_attr_ok((attr), (char *)mnl_nlmsg_get_payload_tail(nlh) - (char *)(attr)); \
-		 (attr) = mnl_attr_next(attr))
+	     (attr) = mnl_attr_next(attr))
 
 #define mnl_attr_for_each_nested(attr, nest) \
 	for ((attr) = mnl_attr_get_payload(nest); \
