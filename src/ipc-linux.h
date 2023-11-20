@@ -461,57 +461,57 @@ static int parse_device(const struct nlattr *attr, void *data)
 		return mnl_attr_parse_nested(attr, parse_peers, device);
 	case WGDEVICE_A_JC:
 		if (!mnl_attr_validate(attr, MNL_TYPE_U16)) {
-            device->junk_packet_count = mnl_attr_get_u16(attr);
-            device->flags |= WGDEVICE_HAS_JC;
-        }
+			device->junk_packet_count = mnl_attr_get_u16(attr);
+			device->flags |= WGDEVICE_HAS_JC;
+		}
 		break;
 	case WGDEVICE_A_JMIN:
 		if (!mnl_attr_validate(attr, MNL_TYPE_U16)) {
-            device->junk_packet_min_size = mnl_attr_get_u16(attr);
-            device->flags |= WGDEVICE_HAS_JMIN;
-        }
+			device->junk_packet_min_size = mnl_attr_get_u16(attr);
+			device->flags |= WGDEVICE_HAS_JMIN;
+		}
 		break;
 	case WGDEVICE_A_JMAX:
 		if (!mnl_attr_validate(attr, MNL_TYPE_U16)) {
-            device->junk_packet_max_size = mnl_attr_get_u16(attr);
-            device->flags |= WGDEVICE_HAS_JMAX;
-        }
+			device->junk_packet_max_size = mnl_attr_get_u16(attr);
+			device->flags |= WGDEVICE_HAS_JMAX;
+		}
 		break;
 	case WGDEVICE_A_S1:
 		if (!mnl_attr_validate(attr, MNL_TYPE_U16)) {
-            device->init_packet_junk_size = mnl_attr_get_u16(attr);
-            device->flags |= WGDEVICE_HAS_S1;
-        }
+			device->init_packet_junk_size = mnl_attr_get_u16(attr);
+			device->flags |= WGDEVICE_HAS_S1;
+		}
 		break;
 	case WGDEVICE_A_S2:
 		if (!mnl_attr_validate(attr, MNL_TYPE_U16)) {
-            device->response_packet_junk_size = mnl_attr_get_u16(attr);
-            device->flags |= WGDEVICE_HAS_S2;
-        }
+			device->response_packet_junk_size = mnl_attr_get_u16(attr);
+			device->flags |= WGDEVICE_HAS_S2;
+		}
 		break;
 	case WGDEVICE_A_H1:
 		if (!mnl_attr_validate(attr, MNL_TYPE_U32)) {
-            device->init_packet_magic_header = mnl_attr_get_u32(attr);
-            device->flags |= WGDEVICE_HAS_H1;
-        }
+			device->init_packet_magic_header = mnl_attr_get_u32(attr);
+			device->flags |= WGDEVICE_HAS_H1;
+		}
 		break;
 	case WGDEVICE_A_H2:
 		if (!mnl_attr_validate(attr, MNL_TYPE_U32)) {
-            device->response_packet_magic_header = mnl_attr_get_u32(attr);
-            device->flags |= WGDEVICE_HAS_H2;
-        }
+			device->response_packet_magic_header = mnl_attr_get_u32(attr);
+			device->flags |= WGDEVICE_HAS_H2;
+		}
 		break;
 	case WGDEVICE_A_H3:
 		if (!mnl_attr_validate(attr, MNL_TYPE_U32)) {
-            device->underload_packet_magic_header = mnl_attr_get_u32(attr);
-            device->flags |= WGDEVICE_HAS_H3;
-        }
+			device->underload_packet_magic_header = mnl_attr_get_u32(attr);
+			device->flags |= WGDEVICE_HAS_H3;
+		}
 		break;
 	case WGDEVICE_A_H4:
 		if (!mnl_attr_validate(attr, MNL_TYPE_U32)) {
-            device->transport_packet_magic_header = mnl_attr_get_u32(attr);
-            device->flags |= WGDEVICE_HAS_H4;
-        }
+			device->transport_packet_magic_header = mnl_attr_get_u32(attr);
+			device->flags |= WGDEVICE_HAS_H4;
+		}
 		break;
 	}
 
