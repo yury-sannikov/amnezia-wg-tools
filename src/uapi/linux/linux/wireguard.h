@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: (GPL-2.0 WITH Linux-syscall-note) OR MIT */
+    /* SPDX-License-Identifier: (GPL-2.0 WITH Linux-syscall-note) OR MIT */
 /*
  * Copyright (C) 2015-2020 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  *
@@ -131,7 +131,7 @@
 #ifndef _WG_UAPI_WIREGUARD_H
 #define _WG_UAPI_WIREGUARD_H
 
-#define WG_GENL_NAME "wireguard"
+#define WG_GENL_NAME "amnezia"
 #define WG_GENL_VERSION 1
 
 #define WG_KEY_LEN 32
