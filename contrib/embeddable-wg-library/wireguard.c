@@ -113,18 +113,18 @@ enum mnl_attr_data_type {
 
 #define mnl_attr_for_each(attr, nlh, offset) \
 	for ((attr) = mnl_nlmsg_get_payload_offset((nlh), (offset)); \
-		 mnl_attr_ok((attr), (char *)mnl_nlmsg_get_payload_tail(nlh) - (char *)(attr)); \
+	     mnl_attr_ok((attr), (char *)mnl_nlmsg_get_payload_tail(nlh) - (char *)(attr)); \
 		 (attr) = mnl_attr_next(attr))
 
 #define mnl_attr_for_each_nested(attr, nest) \
 	for ((attr) = mnl_attr_get_payload(nest); \
-		 mnl_attr_ok((attr), (char *)mnl_attr_get_payload(nest) + mnl_attr_get_payload_len(nest) - (char *)(attr)); \
-		 (attr) = mnl_attr_next(attr))
+	     mnl_attr_ok((attr), (char *)mnl_attr_get_payload(nest) + mnl_attr_get_payload_len(nest) - (char *)(attr)); \
+	     (attr) = mnl_attr_next(attr))
 
 #define mnl_attr_for_each_payload(payload, payload_size) \
 	for ((attr) = (payload); \
-		 mnl_attr_ok((attr), (char *)(payload) + payload_size - (char *)(attr)); \
-		 (attr) = mnl_attr_next(attr))
+	     mnl_attr_ok((attr), (char *)(payload) + payload_size - (char *)(attr)); \
+	     (attr) = mnl_attr_next(attr))
 
 #define MNL_CB_ERROR	-1
 #define MNL_CB_STOP	0
@@ -186,8 +186,8 @@ static void *mnl_nlmsg_get_payload_offset(const struct nlmsghdr *nlh, size_t off
 static bool mnl_nlmsg_ok(const struct nlmsghdr *nlh, int len)
 {
 	return len >= (int)sizeof(struct nlmsghdr) &&
-		   nlh->nlmsg_len >= sizeof(struct nlmsghdr) &&
-		   (int)nlh->nlmsg_len <= len;
+	       nlh->nlmsg_len >= sizeof(struct nlmsghdr) &&
+	       (int)nlh->nlmsg_len <= len;
 }
 
 static struct nlmsghdr *mnl_nlmsg_next(const struct nlmsghdr *nlh, int *len)
@@ -229,8 +229,8 @@ static void *mnl_attr_get_payload(const struct nlattr *attr)
 static bool mnl_attr_ok(const struct nlattr *attr, int len)
 {
 	return len >= (int)sizeof(struct nlattr) &&
-		   attr->nla_len >= sizeof(struct nlattr) &&
-		   (int)attr->nla_len <= len;
+	       attr->nla_len >= sizeof(struct nlattr) &&
+	       (int)attr->nla_len <= len;
 }
 
 static struct nlattr *mnl_attr_next(const struct nlattr *attr)
@@ -248,7 +248,7 @@ static int mnl_attr_type_valid(const struct nlattr *attr, uint16_t max)
 }
 
 static int __mnl_attr_validate(const struct nlattr *attr,
-				   enum mnl_attr_data_type type, size_t exp_len)
+			       enum mnl_attr_data_type type, size_t exp_len)
 {
 	uint16_t attr_len = mnl_attr_get_payload_len(attr);
 	const char *attr_data = mnl_attr_get_payload(attr);
@@ -413,7 +413,7 @@ static struct nlattr *mnl_attr_nest_start(struct nlmsghdr *nlh, uint16_t type)
 }
 
 static bool mnl_attr_put_check(struct nlmsghdr *nlh, size_t buflen,
-				   uint16_t type, size_t len, const void *data)
+			       uint16_t type, size_t len, const void *data)
 {
 	if (nlh->nlmsg_len + MNL_ATTR_HDRLEN + MNL_ALIGN(len) > buflen)
 		return false;
@@ -541,15 +541,15 @@ out:
 }
 
 static int mnl_cb_run2(const void *buf, size_t numbytes, unsigned int seq,
-			   unsigned int portid, mnl_cb_t cb_data, void *data,
-			   const mnl_cb_t *cb_ctl_array, unsigned int cb_ctl_array_len)
+		       unsigned int portid, mnl_cb_t cb_data, void *data,
+		       const mnl_cb_t *cb_ctl_array, unsigned int cb_ctl_array_len)
 {
 	return __mnl_cb_run(buf, numbytes, seq, portid, cb_data, data,
-				cb_ctl_array, cb_ctl_array_len);
+			    cb_ctl_array, cb_ctl_array_len);
 }
 
 static int mnl_cb_run(const void *buf, size_t numbytes, unsigned int seq,
-			  unsigned int portid, mnl_cb_t cb_data, void *data)
+		      unsigned int portid, mnl_cb_t cb_data, void *data)
 {
 	return __mnl_cb_run(buf, numbytes, seq, portid, cb_data, data, NULL, 0);
 }
@@ -622,7 +622,7 @@ static ssize_t mnl_socket_sendto(const struct mnl_socket *nl, const void *buf,
 		.nl_family = AF_NETLINK
 	};
 	return sendto(nl->fd, buf, len, 0,
-			  (struct sockaddr *) &snl, sizeof(snl));
+		      (struct sockaddr *) &snl, sizeof(snl));
 }
 
 static ssize_t mnl_socket_recvfrom(const struct mnl_socket *nl, void *buf,
@@ -780,7 +780,7 @@ static int get_family_id_attr_cb(const struct nlattr *attr, void *data)
 		return MNL_CB_ERROR;
 
 	if (type == CTRL_ATTR_FAMILY_ID &&
-		mnl_attr_validate(attr, MNL_TYPE_U16) < 0)
+	    mnl_attr_validate(attr, MNL_TYPE_U16) < 0)
 		return MNL_CB_ERROR;
 	tb[type] = attr;
 	return MNL_CB_OK;
@@ -1531,11 +1531,11 @@ static int decode_base64(const char src[static 4])
 
 	for (i = 0; i < 4; ++i)
 		val |= (-1
-				+ ((((('A' - 1) - src[i]) & (src[i] - ('Z' + 1))) >> 8) & (src[i] - 64))
-				+ ((((('a' - 1) - src[i]) & (src[i] - ('z' + 1))) >> 8) & (src[i] - 70))
-				+ ((((('0' - 1) - src[i]) & (src[i] - ('9' + 1))) >> 8) & (src[i] + 5))
-				+ ((((('+' - 1) - src[i]) & (src[i] - ('+' + 1))) >> 8) & 63)
-				+ ((((('/' - 1) - src[i]) & (src[i] - ('/' + 1))) >> 8) & 64)
+			    + ((((('A' - 1) - src[i]) & (src[i] - ('Z' + 1))) >> 8) & (src[i] - 64))
+			    + ((((('a' - 1) - src[i]) & (src[i] - ('z' + 1))) >> 8) & (src[i] - 70))
+			    + ((((('0' - 1) - src[i]) & (src[i] - ('9' + 1))) >> 8) & (src[i] + 5))
+			    + ((((('+' - 1) - src[i]) & (src[i] - ('+' + 1))) >> 8) & 63)
+			    + ((((('/' - 1) - src[i]) & (src[i] - ('/' + 1))) >> 8) & 64)
 			) << (18 - 6 * i);
 	return val;
 }
