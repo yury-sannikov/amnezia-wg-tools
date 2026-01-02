@@ -14,7 +14,11 @@
 #include <sys/stat.h>
 #include <sys/un.h>
 
-#define SOCK_PATH RUNSTATEDIR "/amneziawg/"
+#ifndef BWG_SOCK_SUBDIR
+#define BWG_SOCK_SUBDIR "amnezibwg"
+#endif
+
+#define SOCK_PATH RUNSTATEDIR "/" BWG_SOCK_SUBDIR "/"
 #define SOCK_SUFFIX ".sock"
 
 static FILE *userspace_interface_file(const char *iface)
