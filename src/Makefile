@@ -69,7 +69,7 @@ LDFLAGS += -Wl,--major-os-version=6 -Wl,--minor-os-version=1 -Wl,--major-subsyst
 # The use of -Wl,/delayload: here implies we're using llvm-mingw
 LDFLAGS += -Wl,/delayload:ws2_32.dll -Wl,/delayload:setupapi.dll -Wl,/delayload:ole32.dll -Wl,/delayload:advapi32.dll
 VERSION := $(patsubst "%",%,$(filter "%",$(file < version.h)))
-bwg: wincompat/libc.o wincompat/init.o wincompat/loader.o wincompat/resources.o
+wg: wincompat/libc.o wincompat/init.o wincompat/loader.o wincompat/resources.o
 wincompat/resources.o: wincompat/resources.rc wincompat/manifest.xml
 	$(WINDRES) -DVERSION_STR=$(VERSION) -O coff -c 65001 -i $< -o $@
 endif
@@ -86,12 +86,12 @@ RM := @a() { echo "  CLEAN   $$@"; $(BUILT_IN_RM) "$$@"; }; a
 WINDRES := @a() { echo "  WINDRES $${@: -1}"; $(WINDRES) "$$@"; }; a
 endif
 
-bwg: $(sort $(patsubst %.c,%.o,$(wildcard *.c)))
+wg: $(sort $(patsubst %.c,%.o,$(wildcard *.c)))
 
 clean:
-	$(RM) bwg *.o *.d $(wildcard wincompat/*.o wincompat/*.lib wincompat/*.dll)
+	$(RM) wg *.o *.d $(wildcard wincompat/*.o wincompat/*.lib wincompat/*.dll)
 
-install: bwg
+install: wg
 	@install -v -d "$(DESTDIR)$(BINDIR)" && install -v -m 0755 wg "$(DESTDIR)$(BINDIR)/bwg"
 	@install -v -d "$(DESTDIR)$(MANDIR)/man8" && install -v -m 0644 man/wg.8 "$(DESTDIR)$(MANDIR)/man8/bwg.8"
 	@[ "$(WITH_BASHCOMPLETION)" = "yes" ] || exit 0; \
@@ -107,9 +107,9 @@ install: bwg
 	install -v -m 0644 systemd/wg-quick@.service "$(DESTDIR)$(SYSTEMDUNITDIR)/bwg-quick@.service"
 
 check: clean
-	scan-build --html-title=wireguard-tools -maxloop 100 --view --keep-going $(MAKE) bwg
+	scan-build --html-title=wireguard-tools -maxloop 100 --view --keep-going $(MAKE) wg
 
-all: bwg
+all: wg
 .DEFAULT_GOAL: all
 .PHONY: clean install check
 
