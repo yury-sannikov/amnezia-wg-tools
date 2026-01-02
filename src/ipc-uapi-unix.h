@@ -15,7 +15,7 @@
 #include <sys/un.h>
 
 #ifndef BWG_SOCK_SUBDIR
-#define BWG_SOCK_SUBDIR "amnezibwg"
+#define BWG_SOCK_SUBDIR "amneziabwg"
 #endif
 
 #define SOCK_PATH RUNSTATEDIR "/" BWG_SOCK_SUBDIR "/"

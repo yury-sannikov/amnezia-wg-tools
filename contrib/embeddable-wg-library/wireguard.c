@@ -26,7 +26,7 @@
 
 /* wireguard.h netlink uapi: */
 
-#define WG_GENL_NAME "amnezibwg"
+#define WG_GENL_NAME "amneziabwg"
 #define WG_GENL_VERSION 1
 
 enum wg_cmd {

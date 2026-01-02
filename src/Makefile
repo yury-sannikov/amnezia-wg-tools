@@ -97,7 +97,7 @@ install: wg
 	@[ "$(WITH_BASHCOMPLETION)" = "yes" ] || exit 0; \
 	install -v -d "$(DESTDIR)$(BASHCOMPDIR)" && install -v -m 0644 completion/wg.bash-completion "$(DESTDIR)$(BASHCOMPDIR)/bwg"
 	@[ "$(WITH_WGQUICK)" = "yes" ] || exit 0; \
-	install -v -m 0755 wg-quick/$(PLATFORM).bash "$(DESTDIR)$(BINDIR)/bwg-quick" && install -v -m 0700 -d "$(DESTDIR)$(SYSCONFDIR)/amnezia/amnezibwg"
+	install -v -m 0755 wg-quick/$(PLATFORM).bash "$(DESTDIR)$(BINDIR)/bwg-quick" && install -v -m 0700 -d "$(DESTDIR)$(SYSCONFDIR)/amnezia/amneziabwg"
 	@[ "$(WITH_WGQUICK)" = "yes" ] || exit 0; \
 	install -v -m 0644 man/wg-quick.8 "$(DESTDIR)$(MANDIR)/man8/bwg-quick.8"
 	@[ "$(WITH_WGQUICK)" = "yes" -a "$(WITH_BASHCOMPLETION)" = "yes" ] || exit 0; \
