@@ -43,7 +43,7 @@ static const char *get_value(const char *line, const char *key)
 	return line + keylen;
 }
 
-static inline bool parse_port(uint16_t *port, uint32_t *flags, const char *value)
+static inline bool parse_single_port(uint16_t *port, const char *value)
 {
 	int ret;
 	struct addrinfo *resolved;
@@ -76,9 +76,42 @@ static inline bool parse_port(uint16_t *port, uint32_t *flags, const char *value
 		fprintf(stderr, "Neither IPv4 nor IPv6 address found: `%s'\n", value);
 
 	freeaddrinfo(resolved);
-	if (!ret)
-		*flags |= WGDEVICE_HAS_LISTEN_PORT;
 	return ret == 0;
+}
+
+/* Parse port in format "30000" (single) or "30000:40000" (dual: control:data) */
+static inline bool parse_port(uint16_t *port, uint16_t *data_port, uint32_t *flags, const char *value)
+{
+	char *mutable = strdup(value);
+	char *colon;
+	bool ret;
+
+	if (!mutable) {
+		perror("strdup");
+		return false;
+	}
+
+	colon = strchr(mutable, ':');
+	if (colon) {
+		/* Dual-port format: control:data */
+		*colon = '\0';
+		ret = parse_single_port(port, mutable);
+		if (ret) {
+			ret = parse_single_port(data_port, colon + 1);
+			if (ret)
+				*flags |= WGDEVICE_HAS_LISTEN_PORT | WGDEVICE_HAS_DATA_PORT;
+		}
+	} else {
+		/* Single port format */
+		ret = parse_single_port(port, mutable);
+		if (ret) {
+			*data_port = *port; /* Same port for both */
+			*flags |= WGDEVICE_HAS_LISTEN_PORT;
+		}
+	}
+
+	free(mutable);
+	return ret;
 }
 
 static inline bool parse_fwmark(uint32_t *fwmark, uint32_t *flags, const char *value)
@@ -199,10 +232,8 @@ static inline int parse_dns_retries(void)
 	return (int)ret;
 }
 
-static inline bool parse_endpoint(struct sockaddr *endpoint, const char *value)
+static inline bool parse_single_endpoint(struct sockaddr *endpoint, const char *host, const char *port, const char *orig_value)
 {
-	char *mutable = strdup(value);
-	char *begin, *end;
 	int ret, retries = parse_dns_retries();
 	struct addrinfo *resolved;
 	struct addrinfo hints = {
@@ -210,6 +241,44 @@ static inline bool parse_endpoint(struct sockaddr *endpoint, const char *value)
 		.ai_socktype = SOCK_DGRAM,
 		.ai_protocol = IPPROTO_UDP
 	};
+
+	#define min(a, b) ((a) < (b) ? (a) : (b))
+	for (unsigned int timeout = 1000000;; timeout = min(20000000, timeout * 6 / 5)) {
+		ret = getaddrinfo(host, port, &hints, &resolved);
+		if (!ret)
+			break;
+		if (ret == EAI_NONAME || ret == EAI_FAIL ||
+			#ifdef EAI_NODATA
+				ret == EAI_NODATA ||
+			#endif
+				(retries >= 0 && !retries--)) {
+			fprintf(stderr, "%s: `%s'\n", ret == EAI_SYSTEM ? strerror(errno) : gai_strerror(ret), orig_value);
+			return false;
+		}
+		fprintf(stderr, "%s: `%s'. Trying again in %.2f seconds...\n", ret == EAI_SYSTEM ? strerror(errno) : gai_strerror(ret), orig_value, timeout / 1000000.0);
+		usleep(timeout);
+	}
+	#undef min
+
+	if ((resolved->ai_family == AF_INET && resolved->ai_addrlen == sizeof(struct sockaddr_in)) ||
+	    (resolved->ai_family == AF_INET6 && resolved->ai_addrlen == sizeof(struct sockaddr_in6)))
+		memcpy(endpoint, resolved->ai_addr, resolved->ai_addrlen);
+	else {
+		freeaddrinfo(resolved);
+		fprintf(stderr, "Neither IPv4 nor IPv6 address found: `%s'\n", orig_value);
+		return false;
+	}
+	freeaddrinfo(resolved);
+	return true;
+}
+
+/* Parse endpoint in format "host:port" or "host:data_port:control_port" */
+static inline bool parse_endpoint(struct sockaddr *endpoint, struct sockaddr *control_endpoint, uint32_t *peer_flags, const char *value)
+{
+	char *mutable = strdup(value);
+	char *begin, *port_str, *control_port_str = NULL;
+	bool ret;
+
 	if (!mutable) {
 		perror("strdup");
 		return false;
@@ -219,71 +288,81 @@ static inline bool parse_endpoint(struct sockaddr *endpoint, const char *value)
 		fprintf(stderr, "Unable to parse empty endpoint\n");
 		return false;
 	}
+
 	if (mutable[0] == '[') {
+		/* IPv6 format: [host]:port or [host]:port:control_port */
 		begin = &mutable[1];
-		end = strchr(mutable, ']');
-		if (!end) {
+		char *bracket = strchr(mutable, ']');
+		if (!bracket) {
 			free(mutable);
 			fprintf(stderr, "Unable to find matching brace of endpoint: `%s'\n", value);
 			return false;
 		}
-		*end++ = '\0';
-		if (*end++ != ':' || !*end) {
+		*bracket++ = '\0';
+		if (*bracket++ != ':' || !*bracket) {
 			free(mutable);
 			fprintf(stderr, "Unable to find port of endpoint: `%s'\n", value);
 			return false;
+		}
+		port_str = bracket;
+		/* Check for second colon (control port) */
+		control_port_str = strchr(port_str, ':');
+		if (control_port_str) {
+			*control_port_str++ = '\0';
+			if (!*control_port_str) {
+				free(mutable);
+				fprintf(stderr, "Unable to find control port of endpoint: `%s'\n", value);
+				return false;
+			}
 		}
 	} else {
+		/* IPv4 format: host:port or host:port:control_port */
 		begin = mutable;
-		end = strrchr(mutable, ':');
-		if (!end || !*(end + 1)) {
+		/* Find all colons to determine format */
+		char *first_colon = strchr(mutable, ':');
+		if (!first_colon || !*(first_colon + 1)) {
 			free(mutable);
 			fprintf(stderr, "Unable to find port of endpoint: `%s'\n", value);
 			return false;
 		}
-		*end++ = '\0';
-	}
-
-	#define min(a, b) ((a) < (b) ? (a) : (b))
-	for (unsigned int timeout = 1000000;; timeout = min(20000000, timeout * 6 / 5)) {
-		ret = getaddrinfo(begin, end, &hints, &resolved);
-		if (!ret)
-			break;
-		/* The set of return codes that are "permanent failures". All other possibilities are potentially transient.
-		 *
-		 * This is according to https://sourceware.org/glibc/wiki/NameResolver which states:
-		 *	"From the perspective of the application that calls getaddrinfo() it perhaps
-		 *	 doesn't matter that much since EAI_FAIL, EAI_NONAME and EAI_NODATA are all
-		 *	 permanent failure codes and the causes are all permanent failures in the
-		 *	 sense that there is no point in retrying later."
-		 *
-		 * So this is what we do, except FreeBSD removed EAI_NODATA some time ago, so that's conditional.
-		 */
-		if (ret == EAI_NONAME || ret == EAI_FAIL ||
-			#ifdef EAI_NODATA
-				ret == EAI_NODATA ||
-			#endif
-				(retries >= 0 && !retries--)) {
-			free(mutable);
-			fprintf(stderr, "%s: `%s'\n", ret == EAI_SYSTEM ? strerror(errno) : gai_strerror(ret), value);
-			return false;
+		char *second_colon = strchr(first_colon + 1, ':');
+		if (second_colon) {
+			/* Dual-port format: host:data_port:control_port */
+			*first_colon = '\0';
+			port_str = first_colon + 1;
+			*second_colon = '\0';
+			control_port_str = second_colon + 1;
+			if (!*control_port_str) {
+				free(mutable);
+				fprintf(stderr, "Unable to find control port of endpoint: `%s'\n", value);
+				return false;
+			}
+		} else {
+			/* Single port format */
+			*first_colon = '\0';
+			port_str = first_colon + 1;
 		}
-		fprintf(stderr, "%s: `%s'. Trying again in %.2f seconds...\n", ret == EAI_SYSTEM ? strerror(errno) : gai_strerror(ret), value, timeout / 1000000.0);
-		usleep(timeout);
 	}
 
-	if ((resolved->ai_family == AF_INET && resolved->ai_addrlen == sizeof(struct sockaddr_in)) ||
-	    (resolved->ai_family == AF_INET6 && resolved->ai_addrlen == sizeof(struct sockaddr_in6)))
-		memcpy(endpoint, resolved->ai_addr, resolved->ai_addrlen);
-	else {
-		freeaddrinfo(resolved);
+	/* Parse data endpoint */
+	ret = parse_single_endpoint(endpoint, begin, port_str, value);
+	if (!ret) {
 		free(mutable);
-		fprintf(stderr, "Neither IPv4 nor IPv6 address found: `%s'\n", value);
 		return false;
 	}
-	freeaddrinfo(resolved);
+
+	/* Parse control endpoint if specified */
+	if (control_port_str) {
+		ret = parse_single_endpoint(control_endpoint, begin, control_port_str, value);
+		if (ret && peer_flags)
+			*peer_flags |= WGPEER_HAS_CONTROL_ENDPOINT;
+	} else if (control_endpoint) {
+		/* Same endpoint for control */
+		memcpy(control_endpoint, endpoint, sizeof(struct sockaddr_in6));
+	}
+
 	free(mutable);
-	return true;
+	return ret;
 }
 
 static inline bool parse_persistent_keepalive(uint16_t *interval, uint32_t *flags, const char *value)
@@ -526,7 +605,7 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 
 	if (ctx->is_device_section) {
 		if (key_match("ListenPort"))
-			ret = parse_port(&ctx->device->listen_port, &ctx->device->flags, value);
+			ret = parse_port(&ctx->device->listen_port, &ctx->device->data_port, &ctx->device->flags, value);
 		else if (key_match("FwMark"))
 			ret = parse_fwmark(&ctx->device->fwmark, &ctx->device->flags, value);
 		else if (key_match("PrivateKey")) {
@@ -602,7 +681,7 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 		}
 	} else if (ctx->is_peer_section) {
 		if (key_match("Endpoint"))
-			ret = parse_endpoint(&ctx->last_peer->endpoint.addr, value);
+			ret = parse_endpoint(&ctx->last_peer->endpoint.addr, &ctx->last_peer->control_endpoint.addr, &ctx->last_peer->flags, value);
 		else if (key_match("PublicKey")) {
 			ret = parse_key(ctx->last_peer->public_key, value);
 			if (ret)
@@ -778,7 +857,7 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 	}
 	while (argc > 0) {
 		if (!strcmp(argv[0], "listen-port") && argc >= 2 && !peer) {
-			if (!parse_port(&device->listen_port, &device->flags, argv[1]))
+			if (!parse_port(&device->listen_port, &device->data_port, &device->flags, argv[1]))
 				goto error;
 			argv += 2;
 			argc -= 2;
@@ -928,7 +1007,7 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 			argv += 1;
 			argc -= 1;
 		} else if (!strcmp(argv[0], "endpoint") && argc >= 2 && peer) {
-			if (!parse_endpoint(&peer->endpoint.addr, argv[1]))
+			if (!parse_endpoint(&peer->endpoint.addr, &peer->control_endpoint.addr, &peer->flags, argv[1]))
 				goto error;
 			argv += 2;
 			argc -= 2;

@@ -38,8 +38,12 @@ int showconf_main(int argc, const char *argv[])
 	}
 
 	printf("[Interface]\n");
-	if (device->listen_port)
-		printf("ListenPort = %u\n", device->listen_port);
+	if (device->listen_port) {
+		if ((device->flags & WGDEVICE_HAS_DATA_PORT) && device->data_port != 0 && device->data_port != device->listen_port)
+			printf("ListenPort = %u:%u\n", device->listen_port, device->data_port);
+		else
+			printf("ListenPort = %u\n", device->listen_port);
+	}
 	if (device->fwmark)
 		printf("FwMark = 0x%x\n", device->fwmark);
 	if (device->flags & WGDEVICE_HAS_PRIVATE_KEY) {
@@ -111,17 +115,38 @@ int showconf_main(int argc, const char *argv[])
 		if (peer->endpoint.addr.sa_family == AF_INET || peer->endpoint.addr.sa_family == AF_INET6) {
 			char host[4096 + 1];
 			char service[512 + 1];
+			char control_service[512 + 1] = "";
 			socklen_t addr_len = 0;
 
 			if (peer->endpoint.addr.sa_family == AF_INET)
 				addr_len = sizeof(struct sockaddr_in);
 			else if (peer->endpoint.addr.sa_family == AF_INET6)
 				addr_len = sizeof(struct sockaddr_in6);
+
+			/* Get control port if dual-endpoint mode */
+			if ((peer->flags & WGPEER_HAS_CONTROL_ENDPOINT) &&
+			    (peer->control_endpoint.addr.sa_family == AF_INET || peer->control_endpoint.addr.sa_family == AF_INET6)) {
+				socklen_t ctrl_len = 0;
+				char ctrl_host[4096 + 1];
+				if (peer->control_endpoint.addr.sa_family == AF_INET)
+					ctrl_len = sizeof(struct sockaddr_in);
+				else if (peer->control_endpoint.addr.sa_family == AF_INET6)
+					ctrl_len = sizeof(struct sockaddr_in6);
+				getnameinfo(&peer->control_endpoint.addr, ctrl_len, ctrl_host, sizeof(ctrl_host), control_service, sizeof(control_service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST);
+			}
+
 			if (!getnameinfo(&peer->endpoint.addr, addr_len, host, sizeof(host), service, sizeof(service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST)) {
-				if (peer->endpoint.addr.sa_family == AF_INET6 && strchr(host, ':'))
-					printf("Endpoint = [%s]:%s\n", host, service);
-				else
-					printf("Endpoint = %s:%s\n", host, service);
+				if (peer->endpoint.addr.sa_family == AF_INET6 && strchr(host, ':')) {
+					if (control_service[0] && strcmp(service, control_service) != 0)
+						printf("Endpoint = [%s]:%s:%s\n", host, service, control_service);
+					else
+						printf("Endpoint = [%s]:%s\n", host, service);
+				} else {
+					if (control_service[0] && strcmp(service, control_service) != 0)
+						printf("Endpoint = %s:%s:%s\n", host, service, control_service);
+					else
+						printf("Endpoint = %s:%s\n", host, service);
+				}
 			}
 		}
 
