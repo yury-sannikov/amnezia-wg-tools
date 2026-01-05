@@ -50,7 +50,8 @@ enum {
 	WGPEER_HAS_PUBLIC_KEY = 1U << 2,
 	WGPEER_HAS_PRESHARED_KEY = 1U << 3,
 	WGPEER_HAS_PERSISTENT_KEEPALIVE_INTERVAL = 1U << 4,
-	WGPEER_HAS_AWG = 1U << 5
+	WGPEER_HAS_AWG = 1U << 5,
+	WGPEER_HAS_CONTROL_ENDPOINT = 1U << 6
 };
 
 struct wgpeer {
@@ -64,6 +65,13 @@ struct wgpeer {
 		struct sockaddr_in addr4;
 		struct sockaddr_in6 addr6;
 	} endpoint;
+
+	/* Control endpoint for dual-port mode (handshake packets) */
+	union {
+		struct sockaddr addr;
+		struct sockaddr_in addr4;
+		struct sockaddr_in6 addr6;
+	} control_endpoint;
 
 	struct timespec64 last_handshake_time;
 	uint64_t rx_bytes, tx_bytes;
@@ -96,7 +104,8 @@ enum {
 	WGDEVICE_HAS_I2 = 1U << 17,
 	WGDEVICE_HAS_I3 = 1U << 18,
 	WGDEVICE_HAS_I4 = 1U << 19,
-	WGDEVICE_HAS_I5 = 1U << 20
+	WGDEVICE_HAS_I5 = 1U << 20,
+	WGDEVICE_HAS_DATA_PORT = 1U << 21
 };
 
 struct wgdevice {
@@ -110,6 +119,7 @@ struct wgdevice {
 
 	uint32_t fwmark;
 	uint16_t listen_port;
+	uint16_t data_port;  /* Data port for dual-port mode (0 or same as listen_port = single mode) */
 
 	struct wgpeer *first_peer, *last_peer;
 

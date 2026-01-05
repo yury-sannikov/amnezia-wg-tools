@@ -45,8 +45,12 @@ static int userspace_set_device(struct wgdevice *dev)
 		key_to_hex(hex, dev->private_key);
 		fprintf(f, "private_key=%s\n", hex);
 	}
-	if (dev->flags & WGDEVICE_HAS_LISTEN_PORT)
-		fprintf(f, "listen_port=%u\n", dev->listen_port);
+	if (dev->flags & WGDEVICE_HAS_LISTEN_PORT) {
+		if ((dev->flags & WGDEVICE_HAS_DATA_PORT) && dev->data_port != 0 && dev->data_port != dev->listen_port)
+			fprintf(f, "listen_port=%u:%u\n", dev->listen_port, dev->data_port);
+		else
+			fprintf(f, "listen_port=%u\n", dev->listen_port);
+	}
 	if (dev->flags & WGDEVICE_HAS_FWMARK)
 		fprintf(f, "fwmark=%u\n", dev->fwmark);
 	if (dev->flags & WGDEVICE_REPLACE_PEERS)
@@ -101,16 +105,37 @@ static int userspace_set_device(struct wgdevice *dev)
 			fprintf(f, "preshared_key=%s\n", hex);
 		}
 		if (peer->endpoint.addr.sa_family == AF_INET || peer->endpoint.addr.sa_family == AF_INET6) {
+			char control_service[512 + 1] = "";
 			addr_len = 0;
 			if (peer->endpoint.addr.sa_family == AF_INET)
 				addr_len = sizeof(struct sockaddr_in);
 			else if (peer->endpoint.addr.sa_family == AF_INET6)
 				addr_len = sizeof(struct sockaddr_in6);
+			/* Get control port if dual-endpoint mode */
+			if ((peer->flags & WGPEER_HAS_CONTROL_ENDPOINT) &&
+			    (peer->control_endpoint.addr.sa_family == AF_INET || peer->control_endpoint.addr.sa_family == AF_INET6)) {
+				socklen_t ctrl_len = 0;
+				char ctrl_host[4096 + 1];
+				if (peer->control_endpoint.addr.sa_family == AF_INET)
+					ctrl_len = sizeof(struct sockaddr_in);
+				else if (peer->control_endpoint.addr.sa_family == AF_INET6)
+					ctrl_len = sizeof(struct sockaddr_in6);
+				if (!getnameinfo(&peer->control_endpoint.addr, ctrl_len, ctrl_host, sizeof(ctrl_host), control_service, sizeof(control_service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST)) {
+					/* control_service now has the control port */
+				}
+			}
 			if (!getnameinfo(&peer->endpoint.addr, addr_len, host, sizeof(host), service, sizeof(service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST)) {
-				if (peer->endpoint.addr.sa_family == AF_INET6 && strchr(host, ':'))
-					fprintf(f, "endpoint=[%s]:%s\n", host, service);
-				else
-					fprintf(f, "endpoint=%s:%s\n", host, service);
+				if (peer->endpoint.addr.sa_family == AF_INET6 && strchr(host, ':')) {
+					if (control_service[0] && strcmp(service, control_service) != 0)
+						fprintf(f, "endpoint=[%s]:%s:%s\n", host, service, control_service);
+					else
+						fprintf(f, "endpoint=[%s]:%s\n", host, service);
+				} else {
+					if (control_service[0] && strcmp(service, control_service) != 0)
+						fprintf(f, "endpoint=%s:%s:%s\n", host, service, control_service);
+					else
+						fprintf(f, "endpoint=%s:%s\n", host, service);
+				}
 			}
 		}
 		if (peer->flags & WGPEER_HAS_PERSISTENT_KEEPALIVE_INTERVAL)
@@ -217,6 +242,9 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 		} else if (!peer && !strcmp(key, "listen_port")) {
 			dev->listen_port = NUM(0xffffU);
 			dev->flags |= WGDEVICE_HAS_LISTEN_PORT;
+		} else if (!peer && !strcmp(key, "data_port")) {
+			dev->data_port = NUM(0xffffU);
+			dev->flags |= WGDEVICE_HAS_DATA_PORT;
 		} else if (!peer && !strcmp(key, "fwmark")) {
 			dev->fwmark = NUM(0xffffffffU);
 			dev->flags |= WGDEVICE_HAS_FWMARK;
@@ -367,6 +395,44 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			    (resolved->ai_family == AF_INET6 && resolved->ai_addrlen == sizeof(struct sockaddr_in6)))
 				memcpy(&peer->endpoint.addr, resolved->ai_addr, resolved->ai_addrlen);
 			else  {
+				freeaddrinfo(resolved);
+				break;
+			}
+			freeaddrinfo(resolved);
+		} else if (peer && !strcmp(key, "control_endpoint")) {
+			char *begin, *end;
+			struct addrinfo *resolved;
+			struct addrinfo hints = {
+				.ai_family = AF_UNSPEC,
+				.ai_socktype = SOCK_DGRAM,
+				.ai_protocol = IPPROTO_UDP
+			};
+			if (!strlen(value))
+				break;
+			if (value[0] == '[') {
+				begin = &value[1];
+				end = strchr(value, ']');
+				if (!end)
+					break;
+				*end++ = '\0';
+				if (*end++ != ':' || !*end)
+					break;
+			} else {
+				begin = value;
+				end = strrchr(value, ':');
+				if (!end || !*(end + 1))
+					break;
+				*end++ = '\0';
+			}
+			if (getaddrinfo(begin, end, &hints, &resolved) != 0) {
+				ret = ENETUNREACH;
+				goto err;
+			}
+			if ((resolved->ai_family == AF_INET && resolved->ai_addrlen == sizeof(struct sockaddr_in)) ||
+			    (resolved->ai_family == AF_INET6 && resolved->ai_addrlen == sizeof(struct sockaddr_in6))) {
+				memcpy(&peer->control_endpoint.addr, resolved->ai_addr, resolved->ai_addrlen);
+				peer->flags |= WGPEER_HAS_CONTROL_ENDPOINT;
+			} else {
 				freeaddrinfo(resolved);
 				break;
 			}
