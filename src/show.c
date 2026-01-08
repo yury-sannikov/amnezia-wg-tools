@@ -279,7 +279,7 @@ static void pretty_print(struct wgdevice *device)
 			data_ep[sizeof(data_ep) - 1] = '\0';
 			terminal_printf(
 				"  " TERMINAL_BOLD "endpoint" TERMINAL_RESET ": %s"
-				TERMINAL_BOLD "\tcamouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", data_ep, "off"
+				TERMINAL_BOLD "\tcamouflage" TERMINAL_RESET ": " TERMINAL_FG_GREEN "%s" TERMINAL_RESET "\n", data_ep, "amneziawg"
 			);
 		}
 		terminal_printf("  " TERMINAL_BOLD "allowed ips" TERMINAL_RESET ": ");
