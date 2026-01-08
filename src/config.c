@@ -79,7 +79,8 @@ static inline bool parse_single_port(uint16_t *port, const char *value)
 	return ret == 0;
 }
 
-/* Parse port in format "30000" (single) or "30000:40000" (dual: control:data) */
+/* Parse port in format "controlPort:dataPort" (dual-port required)
+ * Allows "0:0" for uninitialized state */
 static inline bool parse_port(uint16_t *port, uint16_t *data_port, uint32_t *flags, const char *value)
 {
 	char *mutable = strdup(value);
@@ -92,21 +93,30 @@ static inline bool parse_port(uint16_t *port, uint16_t *data_port, uint32_t *fla
 	}
 
 	colon = strchr(mutable, ':');
-	if (colon) {
-		/* Dual-port format: control:data */
-		*colon = '\0';
-		ret = parse_single_port(port, mutable);
+	if (!colon) {
+		fprintf(stderr, "Invalid port format, use 'controlPort:dataPort' (dual-port required): `%s'\n", value);
+		free(mutable);
+		return false;
+	}
+
+	/* Dual-port format: control:data */
+	*colon = '\0';
+	ret = parse_single_port(port, mutable);
+	if (ret) {
+		ret = parse_single_port(data_port, colon + 1);
 		if (ret) {
-			ret = parse_single_port(data_port, colon + 1);
-			if (ret)
+			/* Allow 0:0 for uninitialized state */
+			if (*port == 0 && *data_port == 0) {
 				*flags |= WGDEVICE_HAS_LISTEN_PORT | WGDEVICE_HAS_DATA_PORT;
-		}
-	} else {
-		/* Single port format */
-		ret = parse_single_port(port, mutable);
-		if (ret) {
-			*data_port = *port; /* Same port for both */
-			*flags |= WGDEVICE_HAS_LISTEN_PORT;
+			} else if (*port == 0 || *data_port == 0) {
+				fprintf(stderr, "Both ports must be non-zero (or both 0:0 for dynamic): `%s'\n", value);
+				ret = false;
+			} else if (*port == *data_port) {
+				fprintf(stderr, "Control and data ports must be different: `%s'\n", value);
+				ret = false;
+			} else {
+				*flags |= WGDEVICE_HAS_LISTEN_PORT | WGDEVICE_HAS_DATA_PORT;
+			}
 		}
 	}
 
@@ -272,11 +282,11 @@ static inline bool parse_single_endpoint(struct sockaddr *endpoint, const char *
 	return true;
 }
 
-/* Parse endpoint in format "host:port" or "host:data_port:control_port" */
-static inline bool parse_endpoint(struct sockaddr *endpoint, struct sockaddr *control_endpoint, uint32_t *peer_flags, const char *value)
+/* Parse endpoint in format "host:port" or "[ipv6]:port" */
+static inline bool parse_endpoint(struct sockaddr *endpoint, const char *value)
 {
 	char *mutable = strdup(value);
-	char *begin, *port_str, *control_port_str = NULL;
+	char *begin, *port_str;
 	bool ret;
 
 	if (!mutable) {
@@ -290,7 +300,7 @@ static inline bool parse_endpoint(struct sockaddr *endpoint, struct sockaddr *co
 	}
 
 	if (mutable[0] == '[') {
-		/* IPv6 format: [host]:port or [host]:port:control_port */
+		/* IPv6 format: [host]:port */
 		begin = &mutable[1];
 		char *bracket = strchr(mutable, ']');
 		if (!bracket) {
@@ -305,62 +315,20 @@ static inline bool parse_endpoint(struct sockaddr *endpoint, struct sockaddr *co
 			return false;
 		}
 		port_str = bracket;
-		/* Check for second colon (control port) */
-		control_port_str = strchr(port_str, ':');
-		if (control_port_str) {
-			*control_port_str++ = '\0';
-			if (!*control_port_str) {
-				free(mutable);
-				fprintf(stderr, "Unable to find control port of endpoint: `%s'\n", value);
-				return false;
-			}
-		}
 	} else {
-		/* IPv4 format: host:port or host:port:control_port */
+		/* IPv4 format: host:port */
 		begin = mutable;
-		/* Find all colons to determine format */
-		char *first_colon = strchr(mutable, ':');
-		if (!first_colon || !*(first_colon + 1)) {
+		char *colon = strrchr(mutable, ':');
+		if (!colon || !*(colon + 1)) {
 			free(mutable);
 			fprintf(stderr, "Unable to find port of endpoint: `%s'\n", value);
 			return false;
 		}
-		char *second_colon = strchr(first_colon + 1, ':');
-		if (second_colon) {
-			/* Dual-port format: host:data_port:control_port */
-			*first_colon = '\0';
-			port_str = first_colon + 1;
-			*second_colon = '\0';
-			control_port_str = second_colon + 1;
-			if (!*control_port_str) {
-				free(mutable);
-				fprintf(stderr, "Unable to find control port of endpoint: `%s'\n", value);
-				return false;
-			}
-		} else {
-			/* Single port format */
-			*first_colon = '\0';
-			port_str = first_colon + 1;
-		}
+		*colon = '\0';
+		port_str = colon + 1;
 	}
 
-	/* Parse data endpoint */
 	ret = parse_single_endpoint(endpoint, begin, port_str, value);
-	if (!ret) {
-		free(mutable);
-		return false;
-	}
-
-	/* Parse control endpoint if specified */
-	if (control_port_str) {
-		ret = parse_single_endpoint(control_endpoint, begin, control_port_str, value);
-		if (ret && peer_flags)
-			*peer_flags |= WGPEER_HAS_CONTROL_ENDPOINT;
-	} else if (control_endpoint) {
-		/* Same endpoint for control */
-		memcpy(control_endpoint, endpoint, sizeof(struct sockaddr_in6));
-	}
-
 	free(mutable);
 	return ret;
 }
@@ -681,8 +649,12 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 		}
 	} else if (ctx->is_peer_section) {
 		if (key_match("Endpoint"))
-			ret = parse_endpoint(&ctx->last_peer->endpoint.addr, &ctx->last_peer->control_endpoint.addr, &ctx->last_peer->flags, value);
-		else if (key_match("PublicKey")) {
+			ret = parse_endpoint(&ctx->last_peer->endpoint.addr, value);
+		else if (key_match("ControlEndpoint")) {
+			ret = parse_endpoint(&ctx->last_peer->control_endpoint.addr, value);
+			if (ret)
+				ctx->last_peer->flags |= WGPEER_HAS_CONTROL_ENDPOINT;
+		} else if (key_match("PublicKey")) {
 			ret = parse_key(ctx->last_peer->public_key, value);
 			if (ret)
 				ctx->last_peer->flags |= WGPEER_HAS_PUBLIC_KEY;
@@ -1007,8 +979,14 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 			argv += 1;
 			argc -= 1;
 		} else if (!strcmp(argv[0], "endpoint") && argc >= 2 && peer) {
-			if (!parse_endpoint(&peer->endpoint.addr, &peer->control_endpoint.addr, &peer->flags, argv[1]))
+			if (!parse_endpoint(&peer->endpoint.addr, argv[1]))
 				goto error;
+			argv += 2;
+			argc -= 2;
+		} else if (!strcmp(argv[0], "control-endpoint") && argc >= 2 && peer) {
+			if (!parse_endpoint(&peer->control_endpoint.addr, argv[1]))
+				goto error;
+			peer->flags |= WGPEER_HAS_CONTROL_ENDPOINT;
 			argv += 2;
 			argc -= 2;
 		} else if (!strcmp(argv[0], "allowed-ips") && argc >= 2 && peer) {
