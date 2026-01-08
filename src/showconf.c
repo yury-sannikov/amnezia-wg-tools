@@ -110,24 +110,6 @@ int showconf_main(int argc, const char *argv[])
 		if (peer->first_allowedip)
 			printf("\n");
 
-		/* Output data endpoint */
-		if (peer->endpoint.addr.sa_family == AF_INET || peer->endpoint.addr.sa_family == AF_INET6) {
-			char host[4096 + 1];
-			char service[512 + 1];
-			socklen_t addr_len = 0;
-
-			if (peer->endpoint.addr.sa_family == AF_INET)
-				addr_len = sizeof(struct sockaddr_in);
-			else if (peer->endpoint.addr.sa_family == AF_INET6)
-				addr_len = sizeof(struct sockaddr_in6);
-
-			if (!getnameinfo(&peer->endpoint.addr, addr_len, host, sizeof(host), service, sizeof(service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST)) {
-				if (peer->endpoint.addr.sa_family == AF_INET6 && strchr(host, ':'))
-					printf("Endpoint = [%s]:%s\n", host, service);
-				else
-					printf("Endpoint = %s:%s\n", host, service);
-			}
-		}
 		/* Output control endpoint */
 		if ((peer->flags & WGPEER_HAS_CONTROL_ENDPOINT) &&
 		    (peer->control_endpoint.addr.sa_family == AF_INET || peer->control_endpoint.addr.sa_family == AF_INET6)) {
@@ -145,6 +127,25 @@ int showconf_main(int argc, const char *argv[])
 					printf("ControlEndpoint = [%s]:%s\n", ctrl_host, ctrl_service);
 				else
 					printf("ControlEndpoint = %s:%s\n", ctrl_host, ctrl_service);
+			}
+		}
+
+		/* Output data endpoint */
+		if (peer->endpoint.addr.sa_family == AF_INET || peer->endpoint.addr.sa_family == AF_INET6) {
+			char host[4096 + 1];
+			char service[512 + 1];
+			socklen_t addr_len = 0;
+
+			if (peer->endpoint.addr.sa_family == AF_INET)
+				addr_len = sizeof(struct sockaddr_in);
+			else if (peer->endpoint.addr.sa_family == AF_INET6)
+				addr_len = sizeof(struct sockaddr_in6);
+
+			if (!getnameinfo(&peer->endpoint.addr, addr_len, host, sizeof(host), service, sizeof(service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST)) {
+				if (peer->endpoint.addr.sa_family == AF_INET6 && strchr(host, ':'))
+					printf("Endpoint = [%s]:%s\n", host, service);
+				else
+					printf("Endpoint = %s:%s\n", host, service);
 			}
 		}
 

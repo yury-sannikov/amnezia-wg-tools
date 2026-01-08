@@ -263,18 +263,24 @@ static void pretty_print(struct wgdevice *device)
 		terminal_printf(TERMINAL_FG_YELLOW TERMINAL_BOLD "peer" TERMINAL_RESET ": " TERMINAL_FG_YELLOW "%s" TERMINAL_RESET "\n", key(peer->public_key));
 		if (peer->flags & WGPEER_HAS_PRESHARED_KEY)
 			terminal_printf("  " TERMINAL_BOLD "preshared key" TERMINAL_RESET ": %s\n", masked_key(peer->preshared_key));
-		if (peer->endpoint.addr.sa_family == AF_INET || peer->endpoint.addr.sa_family == AF_INET6) {
-			char data_ep[4096 + 512 + 4];
-			strncpy(data_ep, endpoint(&peer->endpoint.addr), sizeof(data_ep) - 1);
-			data_ep[sizeof(data_ep) - 1] = '\0';
-			terminal_printf("  " TERMINAL_BOLD "endpoint" TERMINAL_RESET ": %s\n", data_ep);
-		}
 		if ((peer->flags & WGPEER_HAS_CONTROL_ENDPOINT) &&
 		    (peer->control_endpoint.addr.sa_family == AF_INET || peer->control_endpoint.addr.sa_family == AF_INET6)) {
 			char ctrl_ep[4096 + 512 + 4];
 			strncpy(ctrl_ep, endpoint(&peer->control_endpoint.addr), sizeof(ctrl_ep) - 1);
 			ctrl_ep[sizeof(ctrl_ep) - 1] = '\0';
-			terminal_printf("  " TERMINAL_BOLD "control" TERMINAL_RESET ": %s\n", ctrl_ep);
+			terminal_printf(
+				"  " TERMINAL_BOLD "control" TERMINAL_RESET ": %s "
+				TERMINAL_BOLD "camouflage: " TERMINAL_RESET ": " TERMINAL_FG_RED " %s " TERMINAL_RESET "\n", ctrl_ep, "off"
+			);
+		}
+		if (peer->endpoint.addr.sa_family == AF_INET || peer->endpoint.addr.sa_family == AF_INET6) {
+			char data_ep[4096 + 512 + 4];
+			strncpy(data_ep, endpoint(&peer->endpoint.addr), sizeof(data_ep) - 1);
+			data_ep[sizeof(data_ep) - 1] = '\0';
+			terminal_printf(
+				"  " TERMINAL_BOLD "endpoint" TERMINAL_RESET ": %s"
+				TERMINAL_BOLD "camouflage: " TERMINAL_RESET ": " TERMINAL_FG_RED " %s " TERMINAL_RESET "\n", data_ep, "off"
+			);
 		}
 		terminal_printf("  " TERMINAL_BOLD "allowed ips" TERMINAL_RESET ": ");
 		if (peer->first_allowedip) {
