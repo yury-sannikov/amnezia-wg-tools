@@ -1,2 +1,2 @@
 [Unit]
-Description=WireGuard Tunnels via wg-quick(8)
+Description=WireGuard Tunnels via bwg-quick(8)

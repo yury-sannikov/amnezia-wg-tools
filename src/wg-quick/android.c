@@ -28,10 +28,10 @@
 #include <sys/system_properties.h>
 
 #ifndef AWG_PACKAGE_NAME
-#define AWG_PACKAGE_NAME "org.amnezia.awg"
+#define AWG_PACKAGE_NAME "org.amnezia.bwg"
 #endif
 #ifndef AWG_CONFIG_SEARCH_PATHS
-#define AWG_CONFIG_SEARCH_PATHS "/data/misc/amneziawg /data/data/" AWG_PACKAGE_NAME "/files"
+#define AWG_CONFIG_SEARCH_PATHS "/data/misc/amneziabwg /data/data/" AWG_PACKAGE_NAME "/files"
 #endif
 
 #define _printf_(x, y) __attribute__((format(printf, x, y)))

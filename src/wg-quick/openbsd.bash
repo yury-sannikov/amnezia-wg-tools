@@ -42,7 +42,7 @@ die() {
 parse_options() {
 	local interface_section=0 line key value stripped
 	CONFIG_FILE="$1"
-	[[ $CONFIG_FILE =~ ^[a-zA-Z0-9_=+.-]{1,15}$ ]] && CONFIG_FILE="/etc/amnezia/amneziawg/$CONFIG_FILE.conf"
+	[[ $CONFIG_FILE =~ ^[a-zA-Z0-9_=+.-]{1,15}$ ]] && CONFIG_FILE="/etc/amnezia/amneziabwg/$CONFIG_FILE.conf"
 	[[ -e $CONFIG_FILE ]] || die "\`$CONFIG_FILE' does not exist"
 	[[ $CONFIG_FILE =~ (^|/)([a-zA-Z0-9_=+.-]{1,15})\.conf$ ]] || die "The config file must be a valid interface name, followed by .conf"
 	CONFIG_FILE="$(readlink -f "$CONFIG_FILE")"
@@ -126,7 +126,7 @@ add_if() {
 		local -A existing_ifs="( $(wg show interfaces | sed 's/\([^ ]*\)/[\1]=1/g') )"
 		local index ret
 		if [[ $IS_AWG_ON == 1 ]]; then
-			cmd "amneziawg-go "$INTERFACE"";
+			cmd "amneziabwg-go "$INTERFACE"";
 			return $?
 		else
 			for ((index=0; index <= 2147483647; ++index)); do [[ -v existing_ifs[wg$index] ]] || break; done

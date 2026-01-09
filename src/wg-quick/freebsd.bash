@@ -40,7 +40,7 @@ die() {
 	exit 1
 }
 
-CONFIG_SEARCH_PATHS=( /etc/amnezia/amneziawg /usr/local/etc/amnezia/amneziawg )
+CONFIG_SEARCH_PATHS=( /etc/amnezia/amneziabwg /usr/local/etc/amnezia/amneziabwg )
 
 unset ORIGINAL_TMPDIR
 make_temp() {
@@ -138,7 +138,7 @@ add_if() {
 	local ret rc
 	local cmd="ifconfig wg create name "$INTERFACE""
 	if [[ $IS_AWG_ON == 1 ]]; then
-		cmd="amneziawg-go "$INTERFACE"";
+		cmd="amneziabwg-go "$INTERFACE"";
 	fi
 	if ret="$(cmd $cmd 2>&1 >/dev/null)"; then
 		return 0
@@ -149,7 +149,7 @@ add_if() {
 		return $rc
 	fi
 	echo "[!] Missing WireGuard kernel support ($ret). Falling back to slow userspace implementation." >&3
-	cmd "${WG_QUICK_USERSPACE_IMPLEMENTATION:-amneziawg-go}" "$INTERFACE"
+	cmd "${WG_QUICK_USERSPACE_IMPLEMENTATION:-amneziabwg-go}" "$INTERFACE"
 }
 
 del_routes() {
@@ -178,8 +178,8 @@ del_routes() {
 
 del_if() {
 	[[ $HAVE_SET_DNS -eq 0 ]] || unset_dns
-	if [[ -S /var/run/amneziawg/$INTERFACE.sock ]]; then
-		cmd rm -f "/var/run/amneziawg/$INTERFACE.sock"
+	if [[ -S /var/run/amneziabwg/$INTERFACE.sock ]]; then
+		cmd rm -f "/var/run/amneziabwg/$INTERFACE.sock"
 	else
 		cmd ifconfig "$INTERFACE" destroy
 	fi
