@@ -74,7 +74,8 @@ struct wgpeer {
 	} control_endpoint;
 
 	struct timespec64 last_handshake_time;
-	uint64_t rx_bytes, tx_bytes;
+	uint64_t rx_bytes, tx_bytes;                       /* Data socket bytes */
+	uint64_t control_rx_bytes, control_tx_bytes;       /* Control socket bytes */
 	uint16_t persistent_keepalive_interval;
 
 	bool awg;

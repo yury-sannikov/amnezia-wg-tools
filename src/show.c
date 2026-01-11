@@ -202,7 +202,7 @@ static char *bytes(uint64_t b)
 static const char *COMMAND_NAME;
 static void show_usage(void)
 {
-	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-port | data-port | fwmark | peers | preshared-keys | endpoints | control-endpoints | allowed-ips | latest-handshakes | transfer | persistent-keepalive | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5]\n", PROG_NAME, COMMAND_NAME);
+	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-port | data-port | fwmark | peers | preshared-keys | endpoints | control-endpoints | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5]\n", PROG_NAME, COMMAND_NAME);
 }
 
 static void pretty_print(struct wgdevice *device)
@@ -290,8 +290,13 @@ static void pretty_print(struct wgdevice *device)
 			terminal_printf("(none)\n");
 		if (peer->last_handshake_time.tv_sec)
 			terminal_printf("  " TERMINAL_BOLD "latest handshake" TERMINAL_RESET ": %s\n", ago(&peer->last_handshake_time));
+		if (peer->control_rx_bytes || peer->control_tx_bytes) {
+			terminal_printf("  " TERMINAL_BOLD "control transfer" TERMINAL_RESET ": ");
+			terminal_printf("%s received, ", bytes(peer->control_rx_bytes));
+			terminal_printf("%s sent\n", bytes(peer->control_tx_bytes));
+		}
 		if (peer->rx_bytes || peer->tx_bytes) {
-			terminal_printf("  " TERMINAL_BOLD "transfer" TERMINAL_RESET ": ");
+			terminal_printf("  " TERMINAL_BOLD "data transfer" TERMINAL_RESET ": ");
 			terminal_printf("%s received, ", bytes(peer->rx_bytes));
 			terminal_printf("%s sent\n", bytes(peer->tx_bytes));
 		}
@@ -368,6 +373,7 @@ static void dump_print(struct wgdevice *device, bool with_interface)
 			printf("(none)\t");
 		printf("%llu\t", (unsigned long long)peer->last_handshake_time.tv_sec);
 		printf("%" PRIu64 "\t%" PRIu64 "\t", (uint64_t)peer->rx_bytes, (uint64_t)peer->tx_bytes);
+		printf("%" PRIu64 "\t%" PRIu64 "\t", (uint64_t)peer->control_rx_bytes, (uint64_t)peer->control_tx_bytes);
 		if (peer->persistent_keepalive_interval)
 			printf("%u\n", peer->persistent_keepalive_interval);
 		else
@@ -513,6 +519,12 @@ static bool ugly_print(struct wgdevice *device, const char *param, bool with_int
 			if (with_interface)
 				printf("%s\t", device->name);
 			printf("%s\t%" PRIu64 "\t%" PRIu64 "\n", key(peer->public_key), (uint64_t)peer->rx_bytes, (uint64_t)peer->tx_bytes);
+		}
+	} else if (!strcmp(param, "control-transfer")) {
+		for_each_wgpeer(device, peer) {
+			if (with_interface)
+				printf("%s\t", device->name);
+			printf("%s\t%" PRIu64 "\t%" PRIu64 "\n", key(peer->public_key), (uint64_t)peer->control_rx_bytes, (uint64_t)peer->control_tx_bytes);
 		}
 	} else if (!strcmp(param, "persistent-keepalive")) {
 		for_each_wgpeer(device, peer) {

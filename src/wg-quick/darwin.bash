@@ -121,9 +121,9 @@ get_real_interface() {
 }
 
 add_if() {
-	export WG_TUN_NAME_FILE="/var/run/amneziawg/$INTERFACE.name"
-	mkdir -p "/var/run/amneziawg/"
-	cmd "${WG_QUICK_USERSPACE_IMPLEMENTATION:-amneziawg-go}" utun
+	export WG_TUN_NAME_FILE="/var/run/amneziabwg/$INTERFACE.name"
+	mkdir -p "/var/run/amneziabwg/"
+	cmd "${WG_QUICK_USERSPACE_IMPLEMENTATION:-amneziabwg-go}" utun
 	get_real_interface
 }
 

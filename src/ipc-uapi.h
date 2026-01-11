@@ -470,6 +470,10 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			peer->rx_bytes = NUM(0xffffffffffffffffULL);
 		else if (peer && !strcmp(key, "tx_bytes"))
 			peer->tx_bytes = NUM(0xffffffffffffffffULL);
+		else if (peer && !strcmp(key, "control_rx_bytes"))
+			peer->control_rx_bytes = NUM(0xffffffffffffffffULL);
+		else if (peer && !strcmp(key, "control_tx_bytes"))
+			peer->control_tx_bytes = NUM(0xffffffffffffffffULL);
 		else if (!strcmp(key, "errno"))
 			ret = -NUM(0x7fffffffU);
 	}
