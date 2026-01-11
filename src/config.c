@@ -99,11 +99,11 @@ static inline bool parse_port(uint16_t *port, uint16_t *data_port, uint32_t *fla
 		return false;
 	}
 
-	/* Dual-port format: control:data */
-	*colon = '\0';
-	ret = parse_single_port(port, mutable);
-	if (ret) {
-		ret = parse_single_port(data_port, colon + 1);
+		/* Dual-port format: control:data */
+		*colon = '\0';
+		ret = parse_single_port(port, mutable);
+		if (ret) {
+			ret = parse_single_port(data_port, colon + 1);
 		if (ret) {
 			/* Allow 0:0 for uninitialized state */
 			if (*port == 0 && *data_port == 0) {
@@ -114,7 +114,7 @@ static inline bool parse_port(uint16_t *port, uint16_t *data_port, uint32_t *fla
 			} else if (*port == *data_port) {
 				fprintf(stderr, "Control and data ports must be different: `%s'\n", value);
 				ret = false;
-			} else {
+	} else {
 				*flags |= WGDEVICE_HAS_LISTEN_PORT | WGDEVICE_HAS_DATA_PORT;
 			}
 		}
