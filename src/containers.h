@@ -44,6 +44,13 @@ struct wgallowedip {
 	struct wgallowedip *next_allowedip;
 };
 
+struct wgendpoint {
+	struct sockaddr_storage addr;
+	uint32_t state;
+	uint64_t rx_bytes;
+	uint64_t tx_bytes;
+};
+
 enum {
 	WGPEER_REMOVE_ME = 1U << 0,
 	WGPEER_REPLACE_ALLOWEDIPS = 1U << 1,
@@ -79,6 +86,10 @@ struct wgpeer {
 	uint16_t persistent_keepalive_interval;
 
 	bool awg;
+
+	struct wgendpoint *endpoints;
+	size_t endpoints_len;
+	size_t endpoints_cap;
 
 	struct wgallowedip *first_allowedip, *last_allowedip;
 	struct wgpeer *next_peer;
@@ -121,6 +132,7 @@ struct wgdevice {
 	uint32_t fwmark;
 	uint16_t listen_port;
 	uint16_t data_port;  /* Data port for dual-port mode (0 or same as listen_port = single mode) */
+	char *listen_data_ports;
 
 	struct wgpeer *first_peer, *last_peer;
 
@@ -152,6 +164,7 @@ static inline void free_wgdevice(struct wgdevice *dev)
 	for (struct wgpeer *peer = dev->first_peer, *np = peer ? peer->next_peer : NULL; peer; peer = np, np = peer ? peer->next_peer : NULL) {
 		for (struct wgallowedip *allowedip = peer->first_allowedip, *na = allowedip ? allowedip->next_allowedip : NULL; allowedip; allowedip = na, na = allowedip ? allowedip->next_allowedip : NULL)
 			free(allowedip);
+		free(peer->endpoints);
 		free(peer);
 	}
 
@@ -164,6 +177,7 @@ static inline void free_wgdevice(struct wgdevice *dev)
 	free(dev->i3);
 	free(dev->i4);
 	free(dev->i5);
+	free(dev->listen_data_ports);
 
 	free(dev);
 }

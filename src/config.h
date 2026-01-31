@@ -17,6 +17,7 @@ struct config_ctx {
 	struct wgpeer *last_peer;
 	struct wgallowedip *last_allowedip;
 	bool is_peer_section, is_device_section;
+	int expected_endpoint_index;
 };
 
 size_t clean_special_handshake_line(const char *input, size_t len, char *line);

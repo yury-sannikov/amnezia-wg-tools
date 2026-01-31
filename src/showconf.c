@@ -38,10 +38,10 @@ int showconf_main(int argc, const char *argv[])
 	}
 
 	printf("[Interface]\n");
-	if (device->listen_port || device->data_port) {
-		/* Always output dual-port format */
-		printf("ListenPort = %u:%u\n", device->listen_port, device->data_port);
-	}
+	if (device->listen_port)
+		printf("ListenControlPort = %u\n", device->listen_port);
+	if (device->listen_data_ports)
+		printf("ListenDataPorts = %s\n", device->listen_data_ports);
 	if (device->fwmark)
 		printf("FwMark = 0x%x\n", device->fwmark);
 	if (device->flags & WGDEVICE_HAS_PRIVATE_KEY) {
@@ -130,22 +130,25 @@ int showconf_main(int argc, const char *argv[])
 			}
 		}
 
-		/* Output data endpoint */
-		if (peer->endpoint.addr.sa_family == AF_INET || peer->endpoint.addr.sa_family == AF_INET6) {
-			char host[4096 + 1];
-			char service[512 + 1];
-			socklen_t addr_len = 0;
+		/* Output data endpoints */
+		for (size_t i = 0; i < peer->endpoints_len; i++) {
+			struct wgendpoint *ep = &peer->endpoints[i];
+			if (ep->addr.ss_family == AF_INET || ep->addr.ss_family == AF_INET6) {
+				char host[4096 + 1];
+				char service[512 + 1];
+				socklen_t addr_len = 0;
 
-			if (peer->endpoint.addr.sa_family == AF_INET)
-				addr_len = sizeof(struct sockaddr_in);
-			else if (peer->endpoint.addr.sa_family == AF_INET6)
-				addr_len = sizeof(struct sockaddr_in6);
+				if (ep->addr.ss_family == AF_INET)
+					addr_len = sizeof(struct sockaddr_in);
+				else if (ep->addr.ss_family == AF_INET6)
+					addr_len = sizeof(struct sockaddr_in6);
 
-			if (!getnameinfo(&peer->endpoint.addr, addr_len, host, sizeof(host), service, sizeof(service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST)) {
-				if (peer->endpoint.addr.sa_family == AF_INET6 && strchr(host, ':'))
-					printf("Endpoint = [%s]:%s\n", host, service);
-				else
-					printf("Endpoint = %s:%s\n", host, service);
+				if (!getnameinfo((struct sockaddr *)&ep->addr, addr_len, host, sizeof(host), service, sizeof(service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST)) {
+					if (ep->addr.ss_family == AF_INET6 && strchr(host, ':'))
+						printf("Endpoint%zu = [%s]:%s\n", i + 1, host, service);
+					else
+						printf("Endpoint%zu = %s:%s\n", i + 1, host, service);
+				}
 			}
 		}
 
