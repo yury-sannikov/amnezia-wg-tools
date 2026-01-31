@@ -43,87 +43,6 @@ static const char *get_value(const char *line, const char *key)
 	return line + keylen;
 }
 
-static inline bool parse_single_port(uint16_t *port, const char *value)
-{
-	int ret;
-	struct addrinfo *resolved;
-	struct addrinfo hints = {
-		.ai_family = AF_UNSPEC,
-		.ai_socktype = SOCK_DGRAM,
-		.ai_protocol = IPPROTO_UDP,
-		.ai_flags = AI_PASSIVE
-	};
-
-	if (!strlen(value)) {
-		fprintf(stderr, "Unable to parse empty port\n");
-		return false;
-	}
-
-	ret = getaddrinfo(NULL, value, &hints, &resolved);
-	if (ret) {
-		fprintf(stderr, "%s: `%s'\n", ret == EAI_SYSTEM ? strerror(errno) : gai_strerror(ret), value);
-		return false;
-	}
-
-	ret = -1;
-	if (resolved->ai_family == AF_INET && resolved->ai_addrlen == sizeof(struct sockaddr_in)) {
-		*port = ntohs(((struct sockaddr_in *)resolved->ai_addr)->sin_port);
-		ret = 0;
-	} else if (resolved->ai_family == AF_INET6 && resolved->ai_addrlen == sizeof(struct sockaddr_in6)) {
-		*port = ntohs(((struct sockaddr_in6 *)resolved->ai_addr)->sin6_port);
-		ret = 0;
-	} else
-		fprintf(stderr, "Neither IPv4 nor IPv6 address found: `%s'\n", value);
-
-	freeaddrinfo(resolved);
-	return ret == 0;
-}
-
-/* Parse port in format "controlPort:dataPort" (dual-port required)
- * Allows "0:0" for uninitialized state */
-static inline bool parse_port(uint16_t *port, uint16_t *data_port, uint32_t *flags, const char *value)
-{
-	char *mutable = strdup(value);
-	char *colon;
-	bool ret;
-
-	if (!mutable) {
-		perror("strdup");
-		return false;
-	}
-
-	colon = strchr(mutable, ':');
-	if (!colon) {
-		fprintf(stderr, "Invalid port format, use 'controlPort:dataPort' (dual-port required): `%s'\n", value);
-		free(mutable);
-		return false;
-	}
-
-		/* Dual-port format: control:data */
-		*colon = '\0';
-		ret = parse_single_port(port, mutable);
-		if (ret) {
-			ret = parse_single_port(data_port, colon + 1);
-		if (ret) {
-			/* Allow 0:0 for uninitialized state */
-			if (*port == 0 && *data_port == 0) {
-				*flags |= WGDEVICE_HAS_LISTEN_PORT | WGDEVICE_HAS_DATA_PORT;
-			} else if (*port == 0 || *data_port == 0) {
-				fprintf(stderr, "Both ports must be non-zero (or both 0:0 for dynamic): `%s'\n", value);
-				ret = false;
-			} else if (*port == *data_port) {
-				fprintf(stderr, "Control and data ports must be different: `%s'\n", value);
-				ret = false;
-	} else {
-				*flags |= WGDEVICE_HAS_LISTEN_PORT | WGDEVICE_HAS_DATA_PORT;
-			}
-		}
-	}
-
-	free(mutable);
-	return ret;
-}
-
 static inline bool parse_fwmark(uint32_t *fwmark, uint32_t *flags, const char *value)
 {
 	unsigned long ret;
@@ -331,6 +250,227 @@ static inline bool parse_endpoint(struct sockaddr *endpoint, const char *value)
 	ret = parse_single_endpoint(endpoint, begin, port_str, value);
 	free(mutable);
 	return ret;
+}
+
+static char *format_ports(const uint16_t *ports, size_t len)
+{
+	if (!ports || !len)
+		return NULL;
+
+	size_t out_len = 0;
+	char *out = NULL;
+	size_t i = 0;
+
+	while (i < len) {
+		uint16_t start = ports[i];
+		uint16_t end = start;
+		while (i + 1 < len && ports[i + 1] == (uint16_t)(end + 1)) {
+			end = ports[i + 1];
+			i++;
+		}
+		char buf[32];
+		if (start == end)
+			snprintf(buf, sizeof(buf), "%u", start);
+		else
+			snprintf(buf, sizeof(buf), "%u..%u", start, end);
+
+		size_t buf_len = strlen(buf);
+		size_t needed = out_len + buf_len + (out_len ? 1 : 0) + 1;
+		char *next = realloc(out, needed);
+		if (!next) {
+			perror("realloc");
+			free(out);
+			return NULL;
+		}
+		out = next;
+		if (out_len)
+			out[out_len++] = ',';
+		memcpy(out + out_len, buf, buf_len);
+		out_len += buf_len;
+		out[out_len] = '\0';
+		i++;
+	}
+	return out;
+}
+
+static bool parse_data_ports(const char *value, char **out)
+{
+	char *mutable = NULL;
+	char *token = NULL;
+	char *saveptr = NULL;
+	uint16_t *ports = NULL;
+	size_t ports_len = 0;
+	size_t ports_cap = 0;
+
+	if (!value || !*value) {
+		fprintf(stderr, "ListenDataPorts is empty\n");
+		return false;
+	}
+
+	mutable = strdup(value);
+	if (!mutable) {
+		perror("strdup");
+		return false;
+	}
+
+	for (token = strtok_r(mutable, ",", &saveptr); token; token = strtok_r(NULL, ",", &saveptr)) {
+		while (char_is_space(*token))
+			token++;
+		size_t token_len = strlen(token);
+		while (token_len > 0 && char_is_space(token[token_len - 1]))
+			token[--token_len] = '\0';
+		if (!*token)
+			continue;
+
+		char *range = strstr(token, "..");
+		if (range) {
+			*range = '\0';
+			const char *start_str = token;
+			const char *end_str = range + 2;
+			char *start_end = NULL;
+			char *end_end = NULL;
+			unsigned long start = strtoul(start_str, &start_end, 10);
+			unsigned long end = strtoul(end_str, &end_end, 10);
+			if (*start_end || *end_end || start > 0xffff || end > 0xffff || start > end) {
+				fprintf(stderr, "Invalid ListenDataPorts range: `%s..%s'\n", start_str, end_str);
+				free(mutable);
+				free(ports);
+				return false;
+			}
+			if (end - start > 100) {
+				fprintf(stderr, "ListenDataPorts range too large: `%s..%s'\n", start_str, end_str);
+				free(mutable);
+				free(ports);
+				return false;
+			}
+			for (unsigned long p = start; p <= end; p++) {
+				if (ports_len + 1 > ports_cap) {
+					ports_cap = ports_cap ? ports_cap * 2 : 8;
+					uint16_t *next = realloc(ports, ports_cap * sizeof(uint16_t));
+					if (!next) {
+						perror("realloc");
+						free(mutable);
+						free(ports);
+						return false;
+					}
+					ports = next;
+				}
+				ports[ports_len++] = (uint16_t)p;
+			}
+		} else {
+			char *endptr = NULL;
+			unsigned long p = strtoul(token, &endptr, 10);
+			if (*endptr || p > 0xffff) {
+				fprintf(stderr, "Invalid ListenDataPorts port: `%s'\n", token);
+				free(mutable);
+				free(ports);
+				return false;
+			}
+			if (ports_len + 1 > ports_cap) {
+				ports_cap = ports_cap ? ports_cap * 2 : 8;
+				uint16_t *next = realloc(ports, ports_cap * sizeof(uint16_t));
+				if (!next) {
+					perror("realloc");
+					free(mutable);
+					free(ports);
+					return false;
+				}
+				ports = next;
+			}
+			ports[ports_len++] = (uint16_t)p;
+		}
+	}
+
+	free(mutable);
+
+	if (!ports_len) {
+		fprintf(stderr, "ListenDataPorts has no valid ports\n");
+		free(ports);
+		return false;
+	}
+
+	char *formatted = format_ports(ports, ports_len);
+	free(ports);
+	if (!formatted)
+		return false;
+	*out = formatted;
+	return true;
+}
+
+static bool add_peer_endpoint(struct wgpeer *peer, const struct sockaddr *addr)
+{
+	if (!peer || !addr)
+		return false;
+
+	if (peer->endpoints_len + 1 > peer->endpoints_cap) {
+		size_t new_cap = peer->endpoints_cap ? peer->endpoints_cap * 2 : 2;
+		struct wgendpoint *next = realloc(peer->endpoints, new_cap * sizeof(*peer->endpoints));
+		if (!next) {
+			perror("realloc");
+			return false;
+		}
+		peer->endpoints = next;
+		peer->endpoints_cap = new_cap;
+	}
+
+	struct wgendpoint *slot = &peer->endpoints[peer->endpoints_len++];
+	memset(slot, 0, sizeof(*slot));
+
+	if (addr->sa_family == AF_INET) {
+		memcpy(&slot->addr, addr, sizeof(struct sockaddr_in));
+	} else if (addr->sa_family == AF_INET6) {
+		memcpy(&slot->addr, addr, sizeof(struct sockaddr_in6));
+	} else {
+		memcpy(&slot->addr, addr, sizeof(struct sockaddr));
+	}
+
+	if (peer->endpoints_len == 1) {
+		memcpy(&peer->endpoint.addr, addr, sizeof(peer->endpoint));
+	}
+	return true;
+}
+
+static int endpoint_index_from_line(const char *line, const char **value_out)
+{
+	const char *prefix = "Endpoint";
+	size_t prefix_len = strlen(prefix);
+	const char *p = line;
+	unsigned long index = 0;
+
+	if (strncasecmp(line, prefix, prefix_len))
+		return 0;
+	p += prefix_len;
+	if (!char_is_digit(*p))
+		return 0;
+	while (char_is_digit(*p)) {
+		index = index * 10 + (*p - '0');
+		p++;
+	}
+	if (*p != '=' || index == 0)
+		return 0;
+	*value_out = p + 1;
+	return (int)index;
+}
+
+static int endpoint_index_from_arg(const char *arg)
+{
+	const char *prefix = "endpoint";
+	size_t prefix_len = strlen(prefix);
+	const char *p = arg;
+	unsigned long index = 0;
+
+	if (strncasecmp(arg, prefix, prefix_len))
+		return 0;
+	p += prefix_len;
+	if (!char_is_digit(*p))
+		return 0;
+	while (char_is_digit(*p)) {
+		index = index * 10 + (*p - '0');
+		p++;
+	}
+	if (*p != '\0' || index == 0)
+		return 0;
+	return (int)index;
 }
 
 static inline bool parse_persistent_keepalive(uint16_t *interval, uint32_t *flags, const char *value)
@@ -565,6 +705,7 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 		ctx->last_peer = new_peer;
 		ctx->is_peer_section = true;
 		ctx->is_device_section = false;
+		ctx->expected_endpoint_index = 0;
 		ctx->last_peer->flags |= WGPEER_REPLACE_ALLOWEDIPS;
 		return true;
 	}
@@ -572,8 +713,18 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 #define key_match(key) (value = get_value(line, key "="))
 
 	if (ctx->is_device_section) {
-		if (key_match("ListenPort"))
-			ret = parse_port(&ctx->device->listen_port, &ctx->device->data_port, &ctx->device->flags, value);
+		if (key_match("ListenControlPort")) {
+			ret = parse_uint16(&ctx->device->listen_port, "ListenControlPort", value);
+			if (ret)
+				ctx->device->flags |= WGDEVICE_HAS_LISTEN_PORT;
+		} else if (key_match("ListenDataPorts")) {
+			ret = parse_data_ports(value, &ctx->device->listen_data_ports);
+			if (ret)
+				ctx->device->flags |= WGDEVICE_HAS_DATA_PORT;
+		} else if (key_match("ListenPort")) {
+			fprintf(stderr, "ListenPort is deprecated, use ListenControlPort and ListenDataPorts\n");
+			ret = false;
+		}
 		else if (key_match("FwMark"))
 			ret = parse_fwmark(&ctx->device->fwmark, &ctx->device->flags, value);
 		else if (key_match("PrivateKey")) {
@@ -648,8 +799,24 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 			goto error;
 		}
 	} else if (ctx->is_peer_section) {
-		if (key_match("Endpoint"))
-			ret = parse_endpoint(&ctx->last_peer->endpoint.addr, value);
+		const char *endpoint_value = NULL;
+		int endpoint_index = endpoint_index_from_line(line, &endpoint_value);
+		if (endpoint_index > 0) {
+			if (endpoint_index != ctx->expected_endpoint_index + 1) {
+				fprintf(stderr, "Missing Endpoint%d before Endpoint%d\n", ctx->expected_endpoint_index + 1, endpoint_index);
+				ret = false;
+				goto error;
+			}
+			ctx->expected_endpoint_index = endpoint_index;
+			struct sockaddr_storage endpoint_addr;
+			memset(&endpoint_addr, 0, sizeof(endpoint_addr));
+			ret = parse_endpoint((struct sockaddr *)&endpoint_addr, endpoint_value);
+			if (ret)
+				ret = add_peer_endpoint(ctx->last_peer, (struct sockaddr *)&endpoint_addr);
+		} else if (key_match("Endpoint")) {
+			fprintf(stderr, "Endpoint is deprecated, use Endpoint1, Endpoint2, ...\n");
+			ret = false;
+		}
 		else if (key_match("ControlEndpoint")) {
 			ret = parse_endpoint(&ctx->last_peer->control_endpoint.addr, value);
 			if (ret)
@@ -780,6 +947,7 @@ bool config_read_init(struct config_ctx *ctx, bool append)
 	}
 	if (!append)
 		ctx->device->flags |= WGDEVICE_REPLACE_PEERS | WGDEVICE_HAS_PRIVATE_KEY | WGDEVICE_HAS_FWMARK;
+	ctx->expected_endpoint_index = 0;
 	return true;
 }
 
@@ -822,17 +990,28 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 	struct wgdevice *device = calloc(1, sizeof(*device));
 	struct wgpeer *peer = NULL;
 	struct wgallowedip *allowedip = NULL;
+	int expected_endpoint_index = 0;
 
 	if (!device) {
 		perror("calloc");
 		return false;
 	}
 	while (argc > 0) {
-		if (!strcmp(argv[0], "listen-port") && argc >= 2 && !peer) {
-			if (!parse_port(&device->listen_port, &device->data_port, &device->flags, argv[1]))
+		if (!strcmp(argv[0], "listen-control-port") && argc >= 2 && !peer) {
+			if (!parse_uint16(&device->listen_port, "listen-control-port", argv[1]))
 				goto error;
+			device->flags |= WGDEVICE_HAS_LISTEN_PORT;
 			argv += 2;
 			argc -= 2;
+		} else if (!strcmp(argv[0], "listen-data-ports") && argc >= 2 && !peer) {
+			if (!parse_data_ports(argv[1], &device->listen_data_ports))
+				goto error;
+			device->flags |= WGDEVICE_HAS_DATA_PORT;
+			argv += 2;
+			argc -= 2;
+		} else if (!strcmp(argv[0], "listen-port")) {
+			fprintf(stderr, "listen-port is deprecated, use listen-control-port and listen-data-ports\n");
+			goto error;
 		} else if (!strcmp(argv[0], "fwmark") && argc >= 2 && !peer) {
 			if (!parse_fwmark(&device->fwmark, &device->flags, argv[1]))
 				goto error;
@@ -969,6 +1148,7 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 			else
 				device->first_peer = new_peer;
 			peer = new_peer;
+			expected_endpoint_index = 0;
 			if (!parse_key(peer->public_key, argv[1]))
 				goto error;
 			peer->flags |= WGPEER_HAS_PUBLIC_KEY;
@@ -978,46 +1158,64 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 			peer->flags |= WGPEER_REMOVE_ME;
 			argv += 1;
 			argc -= 1;
-		} else if (!strcmp(argv[0], "endpoint") && argc >= 2 && peer) {
-			if (!parse_endpoint(&peer->endpoint.addr, argv[1]))
+		} else if (peer) {
+			int endpoint_index = endpoint_index_from_arg(argv[0]);
+			if (endpoint_index > 0 && argc >= 2) {
+				if (endpoint_index != expected_endpoint_index + 1) {
+					fprintf(stderr, "Missing endpoint%d before %s\n", expected_endpoint_index + 1, argv[0]);
+					goto error;
+				}
+				expected_endpoint_index = endpoint_index;
+				struct sockaddr_storage endpoint_addr;
+				memset(&endpoint_addr, 0, sizeof(endpoint_addr));
+				if (!parse_endpoint((struct sockaddr *)&endpoint_addr, argv[1]))
+					goto error;
+				if (!add_peer_endpoint(peer, (struct sockaddr *)&endpoint_addr))
+					goto error;
+				argv += 2;
+				argc -= 2;
+			} else if (!strcmp(argv[0], "endpoint")) {
+				fprintf(stderr, "endpoint is deprecated, use endpoint1, endpoint2, ...\n");
 				goto error;
-			argv += 2;
-			argc -= 2;
-		} else if (!strcmp(argv[0], "control-endpoint") && argc >= 2 && peer) {
-			if (!parse_endpoint(&peer->control_endpoint.addr, argv[1]))
-				goto error;
-			peer->flags |= WGPEER_HAS_CONTROL_ENDPOINT;
-			argv += 2;
-			argc -= 2;
-		} else if (!strcmp(argv[0], "allowed-ips") && argc >= 2 && peer) {
-			char *line = strip_spaces(argv[1]);
+			} else if (!strcmp(argv[0], "control-endpoint") && argc >= 2) {
+				if (!parse_endpoint(&peer->control_endpoint.addr, argv[1]))
+					goto error;
+				peer->flags |= WGPEER_HAS_CONTROL_ENDPOINT;
+				argv += 2;
+				argc -= 2;
+			} else if (!strcmp(argv[0], "allowed-ips") && argc >= 2) {
+				char *line = strip_spaces(argv[1]);
 
-			if (!line)
-				goto error;
-			if (!parse_allowedips(peer, &allowedip, line)) {
+				if (!line)
+					goto error;
+				if (!parse_allowedips(peer, &allowedip, line)) {
+					free(line);
+					goto error;
+				}
 				free(line);
+				argv += 2;
+				argc -= 2;
+			} else if (!strcmp(argv[0], "persistent-keepalive") && argc >= 2) {
+				if (!parse_persistent_keepalive(&peer->persistent_keepalive_interval, &peer->flags, argv[1]))
+					goto error;
+				argv += 2;
+				argc -= 2;
+			} else if (!strcmp(argv[0], "preshared-key") && argc >= 2) {
+				if (!parse_keyfile(peer->preshared_key, argv[1]))
+					goto error;
+				peer->flags |= WGPEER_HAS_PRESHARED_KEY;
+				argv += 2;
+				argc -= 2;
+			} else if (!strcmp(argv[0], "advanced-security") && argc >= 2) {
+				if (!parse_bool(&peer->awg, "AdvancedSecurity", argv[1]))
+					goto error;
+				peer->flags |= WGPEER_HAS_AWG;
+				argv += 2;
+				argc -= 2;
+			} else {
+				fprintf(stderr, "Invalid argument: %s\n", argv[0]);
 				goto error;
 			}
-			free(line);
-			argv += 2;
-			argc -= 2;
-		} else if (!strcmp(argv[0], "persistent-keepalive") && argc >= 2 && peer) {
-			if (!parse_persistent_keepalive(&peer->persistent_keepalive_interval, &peer->flags, argv[1]))
-				goto error;
-			argv += 2;
-			argc -= 2;
-		} else if (!strcmp(argv[0], "preshared-key") && argc >= 2 && peer) {
-			if (!parse_keyfile(peer->preshared_key, argv[1]))
-				goto error;
-			peer->flags |= WGPEER_HAS_PRESHARED_KEY;
-			argv += 2;
-			argc -= 2;
-		} else if (!strcmp(argv[0], "advanced-security") && argc >= 2 && peer) {
-			if (!parse_bool(&peer->awg, "AdvancedSecurity", argv[1]))
-				goto error;
-			peer->flags |= WGPEER_HAS_AWG;
-			argv += 2;
-			argc -= 2;
 		} else {
 			fprintf(stderr, "Invalid argument: %s\n", argv[0]);
 			goto error;

@@ -25,6 +25,50 @@
 #include "ipc-uapi-unix.h"
 #endif
 
+static int endpoint_index_from_key(const char *key, const char *prefix)
+{
+	size_t prefix_len = strlen(prefix);
+	const char *p = key;
+	unsigned long index = 0;
+
+	if (strncmp(key, prefix, prefix_len))
+		return 0;
+	p += prefix_len;
+	if (!char_is_digit(*p))
+		return 0;
+	while (char_is_digit(*p)) {
+		index = index * 10 + (*p - '0');
+		p++;
+	}
+	if (*p != '\0' || index == 0)
+		return 0;
+	return (int)index;
+}
+
+static struct wgendpoint *ensure_peer_endpoint(struct wgpeer *peer, size_t index)
+{
+	if (!peer || index == 0)
+		return NULL;
+	if (index > peer->endpoints_len) {
+		size_t needed = index;
+		if (needed > peer->endpoints_cap) {
+			size_t new_cap = peer->endpoints_cap ? peer->endpoints_cap : 2;
+			while (new_cap < needed)
+				new_cap *= 2;
+			struct wgendpoint *next = realloc(peer->endpoints, new_cap * sizeof(*peer->endpoints));
+			if (!next) {
+				perror("realloc");
+				return NULL;
+			}
+			peer->endpoints = next;
+			peer->endpoints_cap = new_cap;
+		}
+		memset(&peer->endpoints[peer->endpoints_len], 0, (needed - peer->endpoints_len) * sizeof(*peer->endpoints));
+		peer->endpoints_len = needed;
+	}
+	return &peer->endpoints[index - 1];
+}
+
 static int userspace_set_device(struct wgdevice *dev)
 {
 	char hex[WG_KEY_LEN_HEX], ip[INET6_ADDRSTRLEN], host[4096 + 1], service[512 + 1];
@@ -45,10 +89,10 @@ static int userspace_set_device(struct wgdevice *dev)
 		key_to_hex(hex, dev->private_key);
 		fprintf(f, "private_key=%s\n", hex);
 	}
-	if (dev->flags & WGDEVICE_HAS_LISTEN_PORT) {
-		/* Always use dual-port format */
-		fprintf(f, "listen_port=%u:%u\n", dev->listen_port, dev->data_port);
-	}
+	if (dev->flags & WGDEVICE_HAS_LISTEN_PORT)
+		fprintf(f, "listen_control_port=%u\n", dev->listen_port);
+	if (dev->flags & WGDEVICE_HAS_DATA_PORT && dev->listen_data_ports)
+		fprintf(f, "listen_data_ports=%s\n", dev->listen_data_ports);
 	if (dev->flags & WGDEVICE_HAS_FWMARK)
 		fprintf(f, "fwmark=%u\n", dev->fwmark);
 	if (dev->flags & WGDEVICE_REPLACE_PEERS)
@@ -102,18 +146,21 @@ static int userspace_set_device(struct wgdevice *dev)
 			key_to_hex(hex, peer->preshared_key);
 			fprintf(f, "preshared_key=%s\n", hex);
 		}
-		/* Output data endpoint */
-		if (peer->endpoint.addr.sa_family == AF_INET || peer->endpoint.addr.sa_family == AF_INET6) {
-			addr_len = 0;
-			if (peer->endpoint.addr.sa_family == AF_INET)
-				addr_len = sizeof(struct sockaddr_in);
-			else if (peer->endpoint.addr.sa_family == AF_INET6)
-				addr_len = sizeof(struct sockaddr_in6);
-			if (!getnameinfo(&peer->endpoint.addr, addr_len, host, sizeof(host), service, sizeof(service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST)) {
-				if (peer->endpoint.addr.sa_family == AF_INET6 && strchr(host, ':'))
-					fprintf(f, "endpoint=[%s]:%s\n", host, service);
-				else
-					fprintf(f, "endpoint=%s:%s\n", host, service);
+		/* Output data endpoints */
+		for (size_t i = 0; i < peer->endpoints_len; i++) {
+			struct wgendpoint *ep = &peer->endpoints[i];
+			if (ep->addr.ss_family == AF_INET || ep->addr.ss_family == AF_INET6) {
+				addr_len = 0;
+				if (ep->addr.ss_family == AF_INET)
+					addr_len = sizeof(struct sockaddr_in);
+				else if (ep->addr.ss_family == AF_INET6)
+					addr_len = sizeof(struct sockaddr_in6);
+				if (!getnameinfo((struct sockaddr *)&ep->addr, addr_len, host, sizeof(host), service, sizeof(service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST)) {
+					if (ep->addr.ss_family == AF_INET6 && strchr(host, ':'))
+						fprintf(f, "endpoint%zu=[%s]:%s\n", i + 1, host, service);
+					else
+						fprintf(f, "endpoint%zu=%s:%s\n", i + 1, host, service);
+				}
 			}
 		}
 		/* Output control endpoint */
@@ -234,11 +281,15 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 				break;
 			curve25519_generate_public(dev->public_key, dev->private_key);
 			dev->flags |= WGDEVICE_HAS_PRIVATE_KEY | WGDEVICE_HAS_PUBLIC_KEY;
-		} else if (!peer && !strcmp(key, "listen_port")) {
+		} else if (!peer && !strcmp(key, "listen_control_port")) {
 			dev->listen_port = NUM(0xffffU);
 			dev->flags |= WGDEVICE_HAS_LISTEN_PORT;
-		} else if (!peer && !strcmp(key, "data_port")) {
-			dev->data_port = NUM(0xffffU);
+		} else if (!peer && !strcmp(key, "listen_data_ports")) {
+			dev->listen_data_ports = strdup(value);
+			if (!dev->listen_data_ports) {
+				ret = -ENOMEM;
+				goto err;
+			}
 			dev->flags |= WGDEVICE_HAS_DATA_PORT;
 		} else if (!peer && !strcmp(key, "fwmark")) {
 			dev->fwmark = NUM(0xffffffffU);
@@ -357,7 +408,8 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 				break;
 			if (!key_is_zero(peer->preshared_key))
 				peer->flags |= WGPEER_HAS_PRESHARED_KEY;
-		} else if (peer && !strcmp(key, "endpoint")) {
+		} else if (peer && endpoint_index_from_key(key, "endpoint") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint");
 			char *begin, *end;
 			struct addrinfo *resolved;
 			struct addrinfo hints = {
@@ -365,6 +417,9 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 				.ai_socktype = SOCK_DGRAM,
 				.ai_protocol = IPPROTO_UDP
 			};
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
 			if (!strlen(value))
 				break;
 			if (value[0] == '[') {
@@ -388,12 +443,37 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			}
 			if ((resolved->ai_family == AF_INET && resolved->ai_addrlen == sizeof(struct sockaddr_in)) ||
 			    (resolved->ai_family == AF_INET6 && resolved->ai_addrlen == sizeof(struct sockaddr_in6)))
-				memcpy(&peer->endpoint.addr, resolved->ai_addr, resolved->ai_addrlen);
+				memcpy(&ep->addr, resolved->ai_addr, resolved->ai_addrlen);
 			else  {
 				freeaddrinfo(resolved);
 				break;
 			}
+			if (endpoint_index == 1)
+				memcpy(&peer->endpoint.addr, &ep->addr, sizeof(peer->endpoint));
 			freeaddrinfo(resolved);
+		} else if (peer && endpoint_index_from_key(key, "endpoint_state") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_state");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
+			if (!strcmp(value, "dark"))
+				ep->state = 0;
+			else if (!strcmp(value, "green"))
+				ep->state = 1;
+			else if (!strcmp(value, "error"))
+				ep->state = 2;
+		} else if (peer && endpoint_index_from_key(key, "endpoint_tx_bytes") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_tx_bytes");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
+			ep->tx_bytes = NUM(UINT64_MAX);
+		} else if (peer && endpoint_index_from_key(key, "endpoint_rx_bytes") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_rx_bytes");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
+			ep->rx_bytes = NUM(UINT64_MAX);
 		} else if (peer && !strcmp(key, "control_endpoint")) {
 			char *begin, *end;
 			struct addrinfo *resolved;

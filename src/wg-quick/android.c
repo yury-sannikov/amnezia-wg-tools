@@ -705,7 +705,7 @@ static uint16_t determine_listen_port(const char *iface)
 	char *value;
 
 	cmd("ip link set up dev %s", iface);
-	value = cmd_ret(&c, "awg show %s listen-port", iface);
+	value = cmd_ret(&c, "awg show %s listen-control-port", iface);
 	if (!value)
 		goto set_back_down;
 	listen_port = strtoul(value, NULL, 10);

@@ -126,6 +126,18 @@ static char *endpoint(const struct sockaddr *addr)
 	return buf;
 }
 
+static const char *endpoint_state_string(uint32_t state)
+{
+	switch (state) {
+	case 1:
+		return "green";
+	case 2:
+		return "error";
+	default:
+		return "dark";
+	}
+}
+
 static size_t pretty_time(char *buf, const size_t len, unsigned long long left)
 {
 	size_t offset = 0;
@@ -202,7 +214,7 @@ static char *bytes(uint64_t b)
 static const char *COMMAND_NAME;
 static void show_usage(void)
 {
-	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-port | data-port | fwmark | peers | preshared-keys | endpoints | control-endpoints | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5]\n", PROG_NAME, COMMAND_NAME);
+	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | control-endpoints | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5]\n", PROG_NAME, COMMAND_NAME);
 }
 
 static void pretty_print(struct wgdevice *device)
@@ -216,9 +228,10 @@ static void pretty_print(struct wgdevice *device)
 		terminal_printf("  " TERMINAL_BOLD "public key" TERMINAL_RESET ": %s\n", key(device->public_key));
 	if (device->flags & WGDEVICE_HAS_PRIVATE_KEY)
 		terminal_printf("  " TERMINAL_BOLD "private key" TERMINAL_RESET ": %s\n", masked_key(device->private_key));
-	if (device->listen_port || device->data_port) {
-		/* Always show both ports (dual-port mode) */
-		terminal_printf("  " TERMINAL_BOLD "control port" TERMINAL_RESET ": %u, " TERMINAL_BOLD "data port" TERMINAL_RESET ": %u\n", device->listen_port, device->data_port);
+	if (device->listen_port || device->listen_data_ports) {
+		terminal_printf("  " TERMINAL_BOLD "control port" TERMINAL_RESET ": %u\n", device->listen_port);
+		if (device->listen_data_ports)
+			terminal_printf("  " TERMINAL_BOLD "data ports" TERMINAL_RESET ": %s\n", device->listen_data_ports);
 	}
 	if (device->fwmark)
 		terminal_printf("  " TERMINAL_BOLD "fwmark" TERMINAL_RESET ": 0x%x\n", device->fwmark);
@@ -273,14 +286,19 @@ static void pretty_print(struct wgdevice *device)
 				TERMINAL_BOLD "\t\tcamouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", ctrl_ep, "amneziawg"
 			);
 		}
-		if (peer->endpoint.addr.sa_family == AF_INET || peer->endpoint.addr.sa_family == AF_INET6) {
-			char data_ep[4096 + 512 + 4];
-			strncpy(data_ep, endpoint(&peer->endpoint.addr), sizeof(data_ep) - 1);
-			data_ep[sizeof(data_ep) - 1] = '\0';
-			terminal_printf(
-				"  " TERMINAL_BOLD "endpoint" TERMINAL_RESET ": %s"
-				TERMINAL_BOLD "\t\tcamouflage" TERMINAL_RESET ": " TERMINAL_FG_GREEN "%s" TERMINAL_RESET "\n", data_ep, "bwg"
-			);
+		for (size_t i = 0; i < peer->endpoints_len; i++) {
+			struct wgendpoint *ep = &peer->endpoints[i];
+			if (ep->addr.ss_family == AF_INET || ep->addr.ss_family == AF_INET6) {
+				char data_ep[4096 + 512 + 4];
+				strncpy(data_ep, endpoint((struct sockaddr *)&ep->addr), sizeof(data_ep) - 1);
+				data_ep[sizeof(data_ep) - 1] = '\0';
+				terminal_printf(
+					"  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": %s"
+					TERMINAL_BOLD "\t\tcamouflage" TERMINAL_RESET ": " TERMINAL_FG_GREEN "%s" TERMINAL_RESET "\n", i + 1, data_ep, "bwg"
+				);
+				terminal_printf("    " TERMINAL_BOLD "state" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state));
+				terminal_printf("    " TERMINAL_BOLD "transfer" TERMINAL_RESET ": %s received, %s sent\n", bytes(ep->rx_bytes), bytes(ep->tx_bytes));
+			}
 		}
 		terminal_printf("  " TERMINAL_BOLD "allowed ips" TERMINAL_RESET ": ");
 		if (peer->first_allowedip) {
@@ -316,9 +334,9 @@ static void dump_print(struct wgdevice *device, bool with_interface)
 		printf("%s\t", device->name);
 	printf("%s\t", maybe_key(device->private_key, device->flags & WGDEVICE_HAS_PRIVATE_KEY));
 	printf("%s\t", maybe_key(device->public_key, device->flags & WGDEVICE_HAS_PUBLIC_KEY));
-	/* Always output both ports (dual-port mode) */
 	printf("%u\t", device->listen_port);
-	printf("%u\t", device->data_port);
+	fputs(device->listen_data_ports ? device->listen_data_ports : "(null)", stdout);
+	fputc('\t', stdout);
 	printf("%u\t", device->junk_packet_count);
 	printf("%u\t", device->junk_packet_min_size);
 	printf("%u\t", device->junk_packet_max_size);
@@ -354,10 +372,17 @@ static void dump_print(struct wgdevice *device, bool with_interface)
 			printf("%s\t", device->name);
 		printf("%s\t", key(peer->public_key));
 		printf("%s\t", maybe_key(peer->preshared_key, peer->flags & WGPEER_HAS_PRESHARED_KEY));
-		if (peer->endpoint.addr.sa_family == AF_INET || peer->endpoint.addr.sa_family == AF_INET6)
-			printf("%s\t", endpoint(&peer->endpoint.addr));
-		else
+		if (peer->endpoints_len) {
+			for (size_t i = 0; i < peer->endpoints_len; i++) {
+				struct wgendpoint *ep = &peer->endpoints[i];
+				if (ep->addr.ss_family == AF_INET || ep->addr.ss_family == AF_INET6)
+					printf("%s%s", endpoint((struct sockaddr *)&ep->addr), i + 1 < peer->endpoints_len ? "," : "\t");
+				else
+					printf("(none)%s", i + 1 < peer->endpoints_len ? "," : "\t");
+			}
+		} else {
 			printf("(none)\t");
+		}
 		/* Always output control endpoint (dual-port mode) */
 		if ((peer->flags & WGPEER_HAS_CONTROL_ENDPOINT) &&
 		    (peer->control_endpoint.addr.sa_family == AF_INET || peer->control_endpoint.addr.sa_family == AF_INET6))
@@ -366,6 +391,22 @@ static void dump_print(struct wgdevice *device, bool with_interface)
 			printf("%s\t", endpoint(&peer->endpoint.addr)); /* fallback to data endpoint if control not set */
 		else
 			printf("(none)\t");
+		if (peer->endpoints_len) {
+			for (size_t i = 0; i < peer->endpoints_len; i++) {
+				struct wgendpoint *ep = &peer->endpoints[i];
+				printf("%s%s", endpoint_state_string(ep->state), i + 1 < peer->endpoints_len ? "," : "\t");
+			}
+			for (size_t i = 0; i < peer->endpoints_len; i++) {
+				struct wgendpoint *ep = &peer->endpoints[i];
+				printf("%" PRIu64 "%s", (uint64_t)ep->rx_bytes, i + 1 < peer->endpoints_len ? "," : "\t");
+			}
+			for (size_t i = 0; i < peer->endpoints_len; i++) {
+				struct wgendpoint *ep = &peer->endpoints[i];
+				printf("%" PRIu64 "%s", (uint64_t)ep->tx_bytes, i + 1 < peer->endpoints_len ? "," : "\t");
+			}
+		} else {
+			printf("(none)\t(none)\t(none)\t");
+		}
 		if (peer->first_allowedip) {
 			for_each_wgallowedip(peer, allowedip)
 				printf("%s/%u%c", ip(allowedip), allowedip->cidr, allowedip->next_allowedip ? ',' : '\t');
@@ -394,14 +435,14 @@ static bool ugly_print(struct wgdevice *device, const char *param, bool with_int
 		if (with_interface)
 			printf("%s\t", device->name);
 		printf("%s\n", maybe_key(device->private_key, device->flags & WGDEVICE_HAS_PRIVATE_KEY));
-	} else if (!strcmp(param, "listen-port")) {
+	} else if (!strcmp(param, "listen-control-port")) {
 		if (with_interface)
 			printf("%s\t", device->name);
 		printf("%u\n", device->listen_port);
-	} else if (!strcmp(param, "data-port")) {
+	} else if (!strcmp(param, "listen-data-ports")) {
 		if (with_interface)
 			printf("%s\t", device->name);
-		printf("%u\n", device->data_port);
+		printf("%s\n", device->listen_data_ports ? device->listen_data_ports : "(none)");
 	} else if (!strcmp(param, "fwmark")) {
 		if (with_interface)
 			printf("%s\t", device->name);
@@ -475,13 +516,37 @@ static bool ugly_print(struct wgdevice *device, const char *param, bool with_int
 		printf("%s\n", device->i5);
 	 } else if (!strcmp(param, "endpoints")) {
 		for_each_wgpeer(device, peer) {
-			if (with_interface)
-				printf("%s\t", device->name);
-			printf("%s\t", key(peer->public_key));
-			if (peer->endpoint.addr.sa_family == AF_INET || peer->endpoint.addr.sa_family == AF_INET6)
-				printf("%s\n", endpoint(&peer->endpoint.addr));
-			else
-				printf("(none)\n");
+			if (peer->endpoints_len) {
+				for (size_t i = 0; i < peer->endpoints_len; i++) {
+					struct wgendpoint *ep = &peer->endpoints[i];
+					if (with_interface)
+						printf("%s\t", device->name);
+					printf("%s\t", key(peer->public_key));
+					if (ep->addr.ss_family == AF_INET || ep->addr.ss_family == AF_INET6)
+						printf("%s\n", endpoint((struct sockaddr *)&ep->addr));
+					else
+						printf("(none)\n");
+				}
+			} else {
+				if (with_interface)
+					printf("%s\t", device->name);
+				printf("%s\t(none)\n", key(peer->public_key));
+			}
+		}
+	} else if (!strcmp(param, "endpoint-stats")) {
+		for_each_wgpeer(device, peer) {
+			if (peer->endpoints_len) {
+				for (size_t i = 0; i < peer->endpoints_len; i++) {
+					struct wgendpoint *ep = &peer->endpoints[i];
+					if (with_interface)
+						printf("%s\t", device->name);
+					printf("%s\t%zu\t%s\t%" PRIu64 "\t%" PRIu64 "\n", key(peer->public_key), i + 1, endpoint_state_string(ep->state), (uint64_t)ep->rx_bytes, (uint64_t)ep->tx_bytes);
+				}
+			} else {
+				if (with_interface)
+					printf("%s\t", device->name);
+				printf("%s\t0\t(none)\t0\t0\n", key(peer->public_key));
+			}
 		}
 	} else if (!strcmp(param, "control-endpoints")) {
 		for_each_wgpeer(device, peer) {
@@ -492,8 +557,9 @@ static bool ugly_print(struct wgdevice *device, const char *param, bool with_int
 			if ((peer->flags & WGPEER_HAS_CONTROL_ENDPOINT) &&
 			    (peer->control_endpoint.addr.sa_family == AF_INET || peer->control_endpoint.addr.sa_family == AF_INET6))
 				printf("%s\n", endpoint(&peer->control_endpoint.addr));
-			else if (peer->endpoint.addr.sa_family == AF_INET || peer->endpoint.addr.sa_family == AF_INET6)
-				printf("%s\n", endpoint(&peer->endpoint.addr)); /* fallback */
+			else if (peer->endpoints_len > 0 &&
+			         (peer->endpoints[0].addr.ss_family == AF_INET || peer->endpoints[0].addr.ss_family == AF_INET6))
+				printf("%s\n", endpoint((struct sockaddr *)&peer->endpoints[0].addr)); /* fallback */
 			else
 				printf("(none)\n");
 		}
