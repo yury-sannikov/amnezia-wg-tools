@@ -281,10 +281,8 @@ static void pretty_print(struct wgdevice *device)
 			char ctrl_ep[4096 + 512 + 4];
 			strncpy(ctrl_ep, endpoint(&peer->control_endpoint.addr), sizeof(ctrl_ep) - 1);
 			ctrl_ep[sizeof(ctrl_ep) - 1] = '\0';
-			terminal_printf(
-				"  " TERMINAL_BOLD "control" TERMINAL_RESET ": %s "
-				TERMINAL_BOLD "\t\tcamouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", ctrl_ep, "amneziawg"
-			);
+			terminal_printf("  " TERMINAL_BOLD "control" TERMINAL_RESET ": %s\n", ctrl_ep);
+			terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", "dns");
 		}
 		for (size_t i = 0; i < peer->endpoints_len; i++) {
 			struct wgendpoint *ep = &peer->endpoints[i];
@@ -292,11 +290,20 @@ static void pretty_print(struct wgdevice *device)
 				char data_ep[4096 + 512 + 4];
 				strncpy(data_ep, endpoint((struct sockaddr *)&ep->addr), sizeof(data_ep) - 1);
 				data_ep[sizeof(data_ep) - 1] = '\0';
-				terminal_printf(
-					"  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": %s"
-					TERMINAL_BOLD "\t\tcamouflage" TERMINAL_RESET ": " TERMINAL_FG_GREEN "%s" TERMINAL_RESET "\n", i + 1, data_ep, "bwg"
-				);
-				terminal_printf("    " TERMINAL_BOLD "state" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state));
+				terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": %s\n", i + 1, data_ep);
+				terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_GREEN "%s" TERMINAL_RESET "\n", "bwg:high-entropy");
+				terminal_printf("    " TERMINAL_BOLD "state" TERMINAL_RESET ": ");
+				switch (ep->state) {
+				case 1:
+					terminal_printf(TERMINAL_FG_GREEN "●" TERMINAL_RESET " %s\n", endpoint_state_string(ep->state));
+					break;
+				case 2:
+					terminal_printf(TERMINAL_FG_RED "●" TERMINAL_RESET " %s\n", endpoint_state_string(ep->state));
+					break;
+				default:
+					terminal_printf(TERMINAL_FG_GRAY "●" TERMINAL_RESET " %s\n", endpoint_state_string(ep->state));
+					break;
+				}
 				terminal_printf("    " TERMINAL_BOLD "transfer" TERMINAL_RESET ": %s received, %s sent\n", bytes(ep->rx_bytes), bytes(ep->tx_bytes));
 			}
 		}

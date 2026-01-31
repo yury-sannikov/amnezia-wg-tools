@@ -14,6 +14,7 @@
 #define TERMINAL_FG_MAGENTA	"\x1b[35m"
 #define TERMINAL_FG_CYAN	"\x1b[36m"
 #define TERMINAL_FG_WHITE	"\x1b[37m"
+#define TERMINAL_FG_GRAY	"\x1b[90m"  /* bright black, rendered as gray */
 #define TERMINAL_FG_DEFAULT	"\x1b[39m"
 
 #define TERMINAL_BG_BLACK	"\x1b[40m"
