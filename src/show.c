@@ -302,16 +302,18 @@ static void pretty_print(struct wgdevice *device)
 				terminal_printf("    " TERMINAL_BOLD "state" TERMINAL_RESET ": ");
 				switch (ep->state) {
 				case 1:
-					terminal_printf(TERMINAL_FG_GREEN "●" TERMINAL_RESET " %-5s, \t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
+					terminal_printf(TERMINAL_FG_GREEN "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
 					break;
 				case 2:
-					terminal_printf(TERMINAL_FG_RED "●" TERMINAL_RESET " %-5s, \t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
+					terminal_printf(TERMINAL_FG_RED "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
 					break;
 				default:
-					terminal_printf(TERMINAL_FG_GRAY "●" TERMINAL_RESET " %-5s, \t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
+					terminal_printf(TERMINAL_FG_GRAY "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
 					break;
 				}
-				terminal_printf("    " TERMINAL_BOLD "transfer" TERMINAL_RESET ": %s received, %s sent\n", bytes(ep->rx_bytes), bytes(ep->tx_bytes));
+				terminal_printf("    " TERMINAL_BOLD "transfer" TERMINAL_RESET ": ");
+				terminal_printf("%s received, ", bytes(ep->rx_bytes));
+				terminal_printf("%s sent\n", bytes(ep->tx_bytes));
 			}
 		}
 		terminal_printf("  " TERMINAL_BOLD "allowed ips" TERMINAL_RESET ": ");

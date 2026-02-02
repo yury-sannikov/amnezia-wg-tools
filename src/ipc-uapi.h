@@ -277,7 +277,6 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 		if (!value || line_len == 0 || key[line_len - 1] != '\n')
 			break;
 		*value++ = key[--line_len] = '\0';
-		printf("\tline: %s -> %s\n", key, value);
 
 		if (!peer && !strcmp(key, "private_key")) {
 			if (!key_from_hex(dev->private_key, value))
