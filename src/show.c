@@ -185,6 +185,13 @@ static char *ago(const struct timespec64 *t)
 	return buf;
 }
 
+static const char *latest_rx_str(const struct wgendpoint *ep)
+{
+	if (!ep->last_received_time.tv_sec && !ep->last_received_time.tv_nsec)
+		return "never";
+	return ago(&ep->last_received_time);
+}
+
 static char *every(uint16_t seconds)
 {
 	static char buf[1024] = "every ";
@@ -295,13 +302,13 @@ static void pretty_print(struct wgdevice *device)
 				terminal_printf("    " TERMINAL_BOLD "state" TERMINAL_RESET ": ");
 				switch (ep->state) {
 				case 1:
-					terminal_printf(TERMINAL_FG_GREEN "●" TERMINAL_RESET " %s\n", endpoint_state_string(ep->state));
+					terminal_printf(TERMINAL_FG_GREEN "●" TERMINAL_RESET " %-5s, \t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
 					break;
 				case 2:
-					terminal_printf(TERMINAL_FG_RED "●" TERMINAL_RESET " %s\n", endpoint_state_string(ep->state));
+					terminal_printf(TERMINAL_FG_RED "●" TERMINAL_RESET " %-5s, \t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
 					break;
 				default:
-					terminal_printf(TERMINAL_FG_GRAY "●" TERMINAL_RESET " %s\n", endpoint_state_string(ep->state));
+					terminal_printf(TERMINAL_FG_GRAY "●" TERMINAL_RESET " %-5s, \t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
 					break;
 				}
 				terminal_printf("    " TERMINAL_BOLD "transfer" TERMINAL_RESET ": %s received, %s sent\n", bytes(ep->rx_bytes), bytes(ep->tx_bytes));

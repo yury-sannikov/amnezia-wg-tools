@@ -49,6 +49,7 @@ struct wgendpoint {
 	uint32_t state;
 	uint64_t rx_bytes;
 	uint64_t tx_bytes;
+	struct timespec64 last_received_time;
 };
 
 enum {

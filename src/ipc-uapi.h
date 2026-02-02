@@ -474,6 +474,18 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			if (!ep)
 				break;
 			ep->rx_bytes = NUM(UINT64_MAX);
+		} else if (peer && endpoint_index_from_key(key, "endpoint_last_received_time_sec") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_last_received_time_sec");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
+			ep->last_received_time.tv_sec = NUM(0x7fffffffffffffffULL);
+		} else if (peer && endpoint_index_from_key(key, "endpoint_last_received_time_nsec") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_last_received_time_nsec");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
+			ep->last_received_time.tv_nsec = NUM(0x7fffffffffffffffULL);
 		} else if (peer && !strcmp(key, "control_endpoint")) {
 			char *begin, *end;
 			struct addrinfo *resolved;
