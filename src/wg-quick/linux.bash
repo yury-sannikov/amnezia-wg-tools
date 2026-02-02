@@ -335,7 +335,7 @@ cmd_up() {
 	done
 	set_mtu_up
 	set_dns
-	for i in $(while read -r _ i; do for i in $i; do [[ $i =~ ^[0-9a-z:.]+/[0-9]+$ ]] && echo "$i"; done; done < <(bwg show "$INTERFACE" allowed-ips) | sort -nr -k 2 -t /); do
+	for i in $(while read -r _ i; do for i in $i; do [[ $i =~ ^[0-9a-z:.]+/[0-9]+$ ]] && echo "$i"; done; done < <(bwg show "$INTERFACE" allowed-ips) | sort -u | sort -nr -k 2 -t /); do
 		add_route "$i"
 	done
 	execute_hooks "${POST_UP[@]}"
