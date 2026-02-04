@@ -290,6 +290,14 @@ static void pretty_print(struct wgdevice *device)
 			ctrl_ep[sizeof(ctrl_ep) - 1] = '\0';
 			terminal_printf("  " TERMINAL_BOLD "control" TERMINAL_RESET ": %s\n", ctrl_ep);
 			terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", "dns");
+
+			if (peer->last_handshake_time.tv_sec)
+    			terminal_printf("  " TERMINAL_BOLD "latest handshake" TERMINAL_RESET ": %s\n", ago(&peer->last_handshake_time));
+	     	if (peer->control_rx_bytes || peer->control_tx_bytes) {
+			    terminal_printf("  " TERMINAL_BOLD "transfer" TERMINAL_RESET ": ");
+			    terminal_printf("%s received, ", bytes(peer->control_rx_bytes));
+			    terminal_printf("%s sent\n", bytes(peer->control_tx_bytes));
+		    }
 		}
 		for (size_t i = 0; i < peer->endpoints_len; i++) {
 			struct wgendpoint *ep = &peer->endpoints[i];
@@ -322,13 +330,6 @@ static void pretty_print(struct wgdevice *device)
 				terminal_printf("%s" TERMINAL_FG_CYAN "/" TERMINAL_RESET "%u%s", ip(allowedip), allowedip->cidr, allowedip->next_allowedip ? ", " : "\n");
 		} else
 			terminal_printf("(none)\n");
-		if (peer->last_handshake_time.tv_sec)
-			terminal_printf("  " TERMINAL_BOLD "latest handshake" TERMINAL_RESET ": %s\n", ago(&peer->last_handshake_time));
-		if (peer->control_rx_bytes || peer->control_tx_bytes) {
-			terminal_printf("  " TERMINAL_BOLD "control transfer" TERMINAL_RESET ": ");
-			terminal_printf("%s received, ", bytes(peer->control_rx_bytes));
-			terminal_printf("%s sent\n", bytes(peer->control_tx_bytes));
-		}
 		if (peer->rx_bytes || peer->tx_bytes) {
 			terminal_printf("  " TERMINAL_BOLD "data transfer" TERMINAL_RESET ": ");
 			terminal_printf("%s received, ", bytes(peer->rx_bytes));
