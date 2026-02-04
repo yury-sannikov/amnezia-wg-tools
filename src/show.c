@@ -292,9 +292,9 @@ static void pretty_print(struct wgdevice *device)
 			terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", "dns");
 
 			if (peer->last_handshake_time.tv_sec)
-    			terminal_printf("  " TERMINAL_BOLD "latest handshake" TERMINAL_RESET ": %s\n", ago(&peer->last_handshake_time));
+    			terminal_printf("    " TERMINAL_BOLD "latest handshake" TERMINAL_RESET ": %s\n", ago(&peer->last_handshake_time));
 	     	if (peer->control_rx_bytes || peer->control_tx_bytes) {
-			    terminal_printf("  " TERMINAL_BOLD "transfer" TERMINAL_RESET ": ");
+			    terminal_printf("    " TERMINAL_BOLD "transfer" TERMINAL_RESET ": ");
 			    terminal_printf("%s received, ", bytes(peer->control_rx_bytes));
 			    terminal_printf("%s sent\n", bytes(peer->control_tx_bytes));
 		    }
