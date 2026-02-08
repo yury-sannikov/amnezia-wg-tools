@@ -49,6 +49,7 @@ struct wgendpoint {
 	uint32_t state;
 	uint64_t rx_bytes;
 	uint64_t tx_bytes;
+	int64_t rtt_nanos; /* last RTT from statistics response (0 = not yet measured) */
 	struct timespec64 last_received_time;
 };
 

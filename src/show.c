@@ -218,6 +218,23 @@ static char *bytes(uint64_t b)
 	return buf;
 }
 
+static const char *rtt_str(int64_t rtt_nanos)
+{
+	static char buf[64];
+
+	if (rtt_nanos <= 0)
+		return "(none)";
+	if (rtt_nanos < 1000)
+		snprintf(buf, sizeof(buf), "%" PRId64 " ns", rtt_nanos);
+	else if (rtt_nanos < 1000000)
+		snprintf(buf, sizeof(buf), "%.2f µs", (double)rtt_nanos / 1000);
+	else if (rtt_nanos < 1000000000)
+		snprintf(buf, sizeof(buf), "%.2f ms", (double)rtt_nanos / 1000000);
+	else
+		snprintf(buf, sizeof(buf), "%.2f s", (double)rtt_nanos / 1000000000);
+	return buf;
+}
+
 static const char *COMMAND_NAME;
 static void show_usage(void)
 {
@@ -322,6 +339,8 @@ static void pretty_print(struct wgdevice *device)
 				terminal_printf("    " TERMINAL_BOLD "transfer" TERMINAL_RESET ": ");
 				terminal_printf("%s received, ", bytes(ep->rx_bytes));
 				terminal_printf("%s sent\n", bytes(ep->tx_bytes));
+				if (ep->rtt_nanos > 0)
+					terminal_printf("    " TERMINAL_BOLD "RTT" TERMINAL_RESET ": %s\n", rtt_str(ep->rtt_nanos));
 			}
 		}
 		terminal_printf("  " TERMINAL_BOLD "allowed ips" TERMINAL_RESET ": ");
@@ -421,8 +440,12 @@ static void dump_print(struct wgdevice *device, bool with_interface)
 				struct wgendpoint *ep = &peer->endpoints[i];
 				printf("%" PRIu64 "%s", (uint64_t)ep->tx_bytes, i + 1 < peer->endpoints_len ? "," : "\t");
 			}
+			for (size_t i = 0; i < peer->endpoints_len; i++) {
+				struct wgendpoint *ep = &peer->endpoints[i];
+				printf("%" PRId64 "%s", (int64_t)ep->rtt_nanos, i + 1 < peer->endpoints_len ? "," : "\t");
+			}
 		} else {
-			printf("(none)\t(none)\t(none)\t");
+			printf("(none)\t(none)\t(none)\t(none)\t");
 		}
 		if (peer->first_allowedip) {
 			for_each_wgallowedip(peer, allowedip)
@@ -557,12 +580,12 @@ static bool ugly_print(struct wgdevice *device, const char *param, bool with_int
 					struct wgendpoint *ep = &peer->endpoints[i];
 					if (with_interface)
 						printf("%s\t", device->name);
-					printf("%s\t%zu\t%s\t%" PRIu64 "\t%" PRIu64 "\n", key(peer->public_key), i + 1, endpoint_state_string(ep->state), (uint64_t)ep->rx_bytes, (uint64_t)ep->tx_bytes);
+					printf("%s\t%zu\t%s\t%" PRIu64 "\t%" PRIu64 "\t%" PRId64 "\n", key(peer->public_key), i + 1, endpoint_state_string(ep->state), (uint64_t)ep->rx_bytes, (uint64_t)ep->tx_bytes, (int64_t)ep->rtt_nanos);
 				}
 			} else {
 				if (with_interface)
 					printf("%s\t", device->name);
-				printf("%s\t0\t(none)\t0\t0\n", key(peer->public_key));
+				printf("%s\t0\t(none)\t0\t0\t0\n", key(peer->public_key));
 			}
 		}
 	} else if (!strcmp(param, "control-endpoints")) {
