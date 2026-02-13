@@ -494,6 +494,40 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			if (!ep)
 				break;
 			ep->rtt_nanos = (int64_t)NUM(0x7fffffffffffffffULL);
+		} else if (peer && endpoint_index_from_key(key, "endpoint_loss_history") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_loss_history");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			char *val, *tok;
+			if (!ep)
+				break;
+			ep->loss_history_len = 0;
+			for (val = value; ep->loss_history_len < WG_LOSS_HISTORY_SIZE && (tok = strsep(&val, ",")); ) {
+				unsigned long n;
+				char *end;
+				if (!char_is_digit(*tok) && *tok != '\0')
+					continue;
+				n = strtoul(tok, &end, 10);
+				if (*end || n > 1000)
+					continue;
+				ep->loss_history[ep->loss_history_len++] = (uint16_t)n;
+			}
+		} else if (peer && endpoint_index_from_key(key, "endpoint_peer_loss_history") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_peer_loss_history");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			char *val, *tok;
+			if (!ep)
+				break;
+			ep->peer_loss_history_len = 0;
+			for (val = value; ep->peer_loss_history_len < WG_LOSS_HISTORY_SIZE && (tok = strsep(&val, ",")); ) {
+				unsigned long n;
+				char *end;
+				if (!char_is_digit(*tok) && *tok != '\0')
+					continue;
+				n = strtoul(tok, &end, 10);
+				if (*end || n > 1000)
+					continue;
+				ep->peer_loss_history[ep->peer_loss_history_len++] = (uint16_t)n;
+			}
 		} else if (peer && !strcmp(key, "control_endpoint")) {
 			char *begin, *end;
 			struct addrinfo *resolved;

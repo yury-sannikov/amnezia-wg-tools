@@ -56,6 +56,12 @@ endif
 ifeq ($(PLATFORM),freebsd)
 LDLIBS += -lnv
 endif
+ifeq ($(PLATFORM),linux)
+LDLIBS += -lm
+endif
+ifeq ($(PLATFORM),darwin)
+LDLIBS += -lm
+endif
 ifeq ($(PLATFORM),haiku)
 LDLIBS += -lnetwork -lbsd
 endif

@@ -5,6 +5,7 @@
 
 #include <arpa/inet.h>
 #include <inttypes.h>
+#include <math.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <net/if.h>
@@ -235,6 +236,51 @@ static const char *rtt_str(int64_t rtt_nanos)
 	return buf;
 }
 
+/* Map loss_per_1k (0..1000) to braille dots: 0 = full (6 dots), 500+ = 1 dot, 1000 = empty. Logarithmic scale. */
+static void loss_to_braille_utf8(char buf[4], uint16_t loss_per_1k)
+{
+	int dots;
+	double scaled;
+
+	if (loss_per_1k >= 1000) {
+		buf[0] = ' ';
+		buf[1] = '\0';
+		return;
+	}
+	if (loss_per_1k == 0) {
+		dots = 6;
+	} else {
+		/* Logarithmic: small loss visible. 500+ -> 1 dot. */
+		scaled = log10(1.0 + 10.0 * (double)loss_per_1k) / log10(10001.0);
+		dots = 6 - (int)(5.0 * scaled);
+		if (dots < 1)
+			dots = 1;
+		if (dots > 6)
+			dots = 6;
+	}
+	/* Braille U+2800 + pattern. Dots 1..N = (1<<N)-1. */
+	{
+		uint32_t codepoint = 0x2800 + ((1 << dots) - 1);
+		buf[0] = (char)(0xE0 | (codepoint >> 12));
+		buf[1] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+		buf[2] = (char)(0x80 | (codepoint & 0x3F));
+		buf[3] = '\0';
+	}
+}
+
+static void print_loss_line(const char *label, uint16_t current, const uint16_t *history, size_t len)
+{
+	char braille[4];
+	size_t i;
+
+	terminal_printf("    " TERMINAL_BOLD "%s" TERMINAL_RESET ": %u/1000   ", label, (unsigned int)current);
+	for (i = 0; i < len; i++) {
+		loss_to_braille_utf8(braille, history[i]);
+		terminal_printf("%s", braille);
+	}
+	terminal_printf("\n");
+}
+
 static const char *COMMAND_NAME;
 static void show_usage(void)
 {
@@ -341,6 +387,14 @@ static void pretty_print(struct wgdevice *device)
 				terminal_printf("%s sent\n", bytes(ep->tx_bytes));
 				if (ep->rtt_nanos > 0)
 					terminal_printf("    " TERMINAL_BOLD "RTT" TERMINAL_RESET ": %s\n", rtt_str(ep->rtt_nanos));
+				if (ep->loss_history_len > 0) {
+					uint16_t tx_current = ep->loss_history[ep->loss_history_len - 1];
+					print_loss_line("TX loss", tx_current, ep->loss_history, ep->loss_history_len);
+				}
+				if (ep->peer_loss_history_len > 0) {
+					uint16_t peer_current = ep->peer_loss_history[ep->peer_loss_history_len - 1];
+					print_loss_line("TX loss (peer)", peer_current, ep->peer_loss_history, ep->peer_loss_history_len);
+				}
 			}
 		}
 		terminal_printf("  " TERMINAL_BOLD "allowed ips" TERMINAL_RESET ": ");

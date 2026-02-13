@@ -44,6 +44,8 @@ struct wgallowedip {
 	struct wgallowedip *next_allowedip;
 };
 
+#define WG_LOSS_HISTORY_SIZE 16
+
 struct wgendpoint {
 	struct sockaddr_storage addr;
 	uint32_t state;
@@ -51,6 +53,11 @@ struct wgendpoint {
 	uint64_t tx_bytes;
 	int64_t rtt_nanos; /* last RTT from statistics response (0 = not yet measured) */
 	struct timespec64 last_received_time;
+	/* Packet loss per 1000 (from UAPI endpoint_loss_history, endpoint_peer_loss_history) */
+	uint16_t loss_history[WG_LOSS_HISTORY_SIZE];
+	uint16_t peer_loss_history[WG_LOSS_HISTORY_SIZE];
+	size_t loss_history_len;
+	size_t peer_loss_history_len;
 };
 
 enum {

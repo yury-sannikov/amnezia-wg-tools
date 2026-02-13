@@ -1,0 +1,217 @@
+# Plan: Add RX/TX Loss Lines with Braille History Bars to `bwg show` (implemented)
+
+## Goal
+
+For each endpoint in `bwg show` output, add two new lines:
+- **RX loss**: current 1k loss rate + history bar (braille dots)
+- **TX loss**: current 1k loss rate + history bar (braille dots)
+
+Same indent as existing endpoint lines (`    transfer`, `    RTT`).
+
+## Current Output (example)
+
+```
+  endpoint1: ....
+    camouflage: bwg:high-entropy
+    state: ● green,	latest rx: 1 second ago
+    transfer: 16.06 MiB received, 16.30 MiB sent
+    RTT: 142.13 ms
+  endpoint2: ...
+    ...
+```
+
+## Target Output (example)
+
+```
+  endpoint1: ....
+    camouflage: bwg:high-entropy
+    state: ● green,	latest rx: 1 second ago
+    transfer: 16.06 MiB received, 16.30 MiB sent
+    RTT: 142.13 ms
+    RX loss: 12/1000  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+    TX loss: 5/1000   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+  endpoint2: ...
+```
+
+## UAPI Semantics (amneziawg-go)
+
+From `device/uapi.go`, per endpoint we have:
+- `endpoint_loss_history%d` — comma-separated loss-per-1000 values (our computed loss of **our TX**)
+- `endpoint_peer_loss_history%d` — comma-separated loss-per-1000 values (peer's computed loss of **our TX**)
+
+Both are loss of **our TX** (packets we send → peer receives). We do **not** currently have **RX loss** (packets peer sends → we receive) in the UAPI.
+
+**Mapping for display:**
+- **TX loss** = our TX loss = use `endpoint_loss_history` (our computed) as primary
+- **RX loss** = our RX loss = **not available** in current UAPI. Options:
+  1. **Phase 1**: Show only TX loss (one line), or show both histories as "TX loss (our view)" and "TX loss (peer view)"
+  2. **Phase 2**: Extend amneziawg-go UAPI to expose RX loss (our view of peer's TX loss) — requires additional tracking
+
+**Recommendation**: Implement TX loss first. For RX loss, either:
+- Omit RX line until UAPI is extended, or
+- Show `endpoint_peer_loss_history` as "TX loss (peer view)" on a second line (both lines are TX loss from different perspectives)
+
+User said "RX loss and TX loss" — we will plan for both. If RX is unavailable, we document it and can add a placeholder or second TX view.
+
+---
+
+## Implementation Plan
+
+### 1. Extend `struct wgendpoint` (containers.h)
+
+Add fields for loss history:
+
+```c
+struct wgendpoint {
+    /* ... existing fields ... */
+    /* Packet loss (per 1000), last 16 values each */
+    uint16_t loss_history[16];       /* our computed TX loss */
+    uint16_t peer_loss_history[16];   /* peer's computed TX loss */
+    size_t loss_history_len;         /* 0..16 */
+    size_t peer_loss_history_len;    /* 0..16 */
+};
+```
+
+Or use a fixed 16-element array and a length. Current/latest = first element (or last, depending on order from UAPI).
+
+### 2. Parse UAPI in ipc-uapi.h
+
+In `userspace_get_device`, add handlers for:
+- `endpoint_loss_history%d` — parse comma-separated list of uint16, store in `ep->loss_history`
+- `endpoint_peer_loss_history%d` — parse comma-separated list of uint16, store in `ep->peer_loss_history`
+
+Format: `endpoint_loss_history1=0,5,12,0,3,...` (up to 16 values).
+
+### 3. Braille Bar Helper (show.c)
+
+Add a function to render a single history value as a braille character:
+
+```c
+/* Map loss_per_1k (0..1000) to braille: 0 = full (U+283F), 500+ = 1 dot (U+2801) */
+static char loss_to_braille(uint16_t loss_per_1k);
+```
+
+**Logarithmic scale** (so small loss is visible):
+- 0 loss → full block (U+283F BRAILLE PATTERN DOTS-123456, or U+28FF for 8-dot full)
+- 1–50 → 7 dots
+- 51–100 → 6 dots
+- … (logarithmic steps)
+- 500+ → 1 dot (U+2801 BRAILLE PATTERN DOTS-1)
+
+Formula (example):
+```
+scaled = log10(1 + 10 * loss_per_1k) / log10(10001)
+dots = max(1, 8 - (int)(7 * scaled))
+```
+Then map `dots` (1..8) to the appropriate braille pattern. For 6-dot braille, use 1..6.
+
+**Braille patterns (6-dot, U+2800 block):**
+- U+2800 = blank (0 dots)
+- U+2801 = dots-1 (1 dot)
+- U+281F = dots-12345 (5 dots)
+- U+283F = dots-123456 (6 dots, full)
+
+For 8-dot: U+28FF = all 8 dots. Use 8-dot block (U+28C0–U+28FF) if we want 8 levels.
+
+**Simpler approach**: Precompute 9 braille chars for loss levels 0, 1, 2, …, 8 (0 = full, 8 = 1 dot). Use a small lookup table.
+
+### 4. Format Loss Line (show.c)
+
+Add helper:
+
+```c
+static void print_loss_line(const char *label, uint16_t current, const uint16_t *history, size_t len);
+```
+
+Output format: `    RX loss: 12/1000   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿`
+- `current` = first value of history (most recent) or 0 if empty
+- `history` = up to 16 values, each rendered as one braille char
+
+### 5. Integrate into pretty_print (show.c)
+
+In the endpoint loop (around line 319), after RTT:
+
+```c
+if (ep->rtt_nanos > 0)
+    terminal_printf("    " TERMINAL_BOLD "RTT" TERMINAL_RESET ": %s\n", rtt_str(ep->rtt_nanos));
+/* NEW: loss lines */
+if (ep->loss_history_len > 0) {
+    uint16_t tx_current = ep->loss_history[0];  /* or last, depending on order */
+    print_loss_line("TX loss", tx_current, ep->loss_history, ep->loss_history_len);
+}
+if (ep->peer_loss_history_len > 0) {
+    uint16_t rx_current = ep->peer_loss_history[0];
+    print_loss_line("RX loss", rx_current, ep->peer_loss_history, ep->peer_loss_history_len);
+}
+```
+
+**Note**: If we treat `endpoint_loss_history` = TX and `endpoint_peer_loss_history` = peer's view of TX (not RX), we might label them:
+- `TX loss (our view)` and `TX loss (peer view)` — or just `TX loss` and `peer TX loss`.
+
+Until RX is available, we can either:
+- Show only TX loss (one line), or
+- Show both as "TX loss" and "TX loss (peer)" — user can interpret.
+
+### 6. Braille Character Mapping (logarithmic)
+
+| loss_per_1k | dots shown | Braille (6-dot) |
+|-------------|-----------|-----------------|
+| 0           | 6 (full)  | U+283F ⣿        |
+| 1–2         | 5         | U+283E          |
+| 3–5         | 4         | U+283C          |
+| 6–15        | 3         | U+2838          |
+| 16–50       | 2         | U+2830          |
+| 51–500      | 1         | U+2801          |
+| 500+        | 1         | U+2801          |
+
+Use: `dots = 6 - floor(log10(1 + 10*loss) / log10(1001) * 6)`, clamped to 1..6.
+Then map to U+2800 + (pattern for N dots). Braille encoding: dots 1–6 = bits 0–5, value = (1<<6)-1 - (mask for N dots). Actually the Unicode offset is the bit pattern: dot 1=bit0, dot2=bit1, …, dot6=bit5. Full = 0x3F = 63 = U+2800+0x3F = U+283F.
+
+For N dots (1..6), we want the "least full" pattern = 6-N dots missing. So we show (6-N) dots. "Full dots = no loss" → 6 dots. "1 dot = 50%+ loss" → 1 dot.
+So: loss 0 → 6 dots (U+283F). loss 500+ → 1 dot (U+2801).
+
+Logarithmic: `level = clamp(0, 5, floor(6 * log10(1 + 10*loss) / log10(1001)))`; dots = 6 - level. So level 0 → 6 dots, level 5 → 1 dot.
+
+### 7. Files to Touch
+
+| File | Changes |
+|------|---------|
+| `src/containers.h` | Add `loss_history[16]`, `peer_loss_history[16]`, `loss_history_len`, `peer_loss_history_len` to `struct wgendpoint` |
+| `src/ipc-uapi.h` | Parse `endpoint_loss_history%d` and `endpoint_peer_loss_history%d` |
+| `src/show.c` | Add `loss_to_braille()`, `print_loss_line()`, call from `pretty_print` |
+| `src/Makefile` | No change (show.c already built) |
+
+### 8. Edge Cases
+
+- Empty history: don't print the loss line (or print `(none)`)
+- All zeros: show full bar
+- UTF-8: Braille is in BMP, 3 bytes in UTF-8. Ensure terminal supports it.
+- Fallback: if `loss_history_len == 0` and `peer_loss_history_len == 0`, skip both lines.
+
+### 9. RX vs TX Labeling (Final)
+
+Given current UAPI:
+- `endpoint_loss_history` = our computed loss of our TX
+- `endpoint_peer_loss_history` = peer's computed loss of our TX
+
+We have **only TX loss** (two views). Options:
+1. **One line**: "TX loss: X/1000 [bar]" using our view
+2. **Two lines**: "TX loss: X/1000 [bar]" (our view) and "TX loss (peer): Y/1000 [bar]" (peer view)
+3. **Mislabel**: "TX loss" and "RX loss" — incorrect, but if user insists we could use peer view as "RX" as a placeholder until real RX exists. **Not recommended.**
+
+**Recommendation**: Use two lines, both TX:
+- `TX loss: X/1000 [bar]` — from `endpoint_loss_history`
+- `TX loss (peer): Y/1000 [bar]` — from `endpoint_peer_loss_history`
+
+If the user specifically wants "RX loss" and we don't have it, add a note in the output or doc. We can revisit when/if amneziawg-go adds RX loss.
+
+---
+
+## Summary
+
+1. Extend `struct wgendpoint` with loss history arrays.
+2. Parse `endpoint_loss_history%d` and `endpoint_peer_loss_history%d` in ipc-uapi.h.
+3. Implement `loss_to_braille()` with logarithmic scale (0→full, 500+→1 dot).
+4. Implement `print_loss_line()` to format "    TX loss: X/1000   ⣿⣿⣿…".
+5. Call from `pretty_print` for each endpoint.
+6. Document that "RX loss" requires UAPI extension; for now show "TX loss" and "TX loss (peer)".
