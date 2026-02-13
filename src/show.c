@@ -268,16 +268,19 @@ static void loss_to_braille_utf8(char buf[4], uint16_t loss_per_1k)
 	}
 }
 
+/* Print loss line: fixed-width number (4 chars) so TX and RX bars align. Pad to 16 chars total. */
 static void print_loss_line(const char *label, uint16_t current, const uint16_t *history, size_t len)
 {
 	char braille[4];
 	size_t i;
 
-	terminal_printf("    " TERMINAL_BOLD "%s" TERMINAL_RESET ": %u/1000   ", label, (unsigned int)current);
+	terminal_printf("    " TERMINAL_BOLD "%s" TERMINAL_RESET ": %4u/1000   ", label, (unsigned int)current);
 	for (i = 0; i < len; i++) {
 		loss_to_braille_utf8(braille, history[i]);
 		terminal_printf("%s", braille);
 	}
+	for (i = len; i < WG_LOSS_HISTORY_SIZE; i++)
+		terminal_printf(" ");
 	terminal_printf("\n");
 }
 
@@ -392,8 +395,8 @@ static void pretty_print(struct wgdevice *device)
 					print_loss_line("TX loss", tx_current, ep->loss_history, ep->loss_history_len);
 				}
 				if (ep->peer_loss_history_len > 0) {
-					uint16_t peer_current = ep->peer_loss_history[ep->peer_loss_history_len - 1];
-					print_loss_line("TX loss (peer)", peer_current, ep->peer_loss_history, ep->peer_loss_history_len);
+					uint16_t rx_current = ep->peer_loss_history[ep->peer_loss_history_len - 1];
+					print_loss_line("RX loss", rx_current, ep->peer_loss_history, ep->peer_loss_history_len);
 				}
 			}
 		}
