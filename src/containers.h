@@ -67,7 +67,8 @@ enum {
 	WGPEER_HAS_PRESHARED_KEY = 1U << 3,
 	WGPEER_HAS_PERSISTENT_KEEPALIVE_INTERVAL = 1U << 4,
 	WGPEER_HAS_AWG = 1U << 5,
-	WGPEER_HAS_CONTROL_ENDPOINT = 1U << 6
+	WGPEER_HAS_CONTROL_ENDPOINT = 1U << 6,
+	WGPEER_HAS_ENDPOINT_STRATEGY = 1U << 7
 };
 
 struct wgpeer {
@@ -99,6 +100,8 @@ struct wgpeer {
 	struct wgendpoint *endpoints;
 	size_t endpoints_len;
 	size_t endpoints_cap;
+
+	char *endpoint_strategy;
 
 	struct wgallowedip *first_allowedip, *last_allowedip;
 	struct wgpeer *next_peer;
@@ -174,6 +177,7 @@ static inline void free_wgdevice(struct wgdevice *dev)
 		for (struct wgallowedip *allowedip = peer->first_allowedip, *na = allowedip ? allowedip->next_allowedip : NULL; allowedip; allowedip = na, na = allowedip ? allowedip->next_allowedip : NULL)
 			free(allowedip);
 		free(peer->endpoints);
+		free(peer->endpoint_strategy);
 		free(peer);
 	}
 

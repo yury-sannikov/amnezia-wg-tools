@@ -287,7 +287,7 @@ static void print_loss_line(const char *label, uint16_t current, const uint16_t 
 static const char *COMMAND_NAME;
 static void show_usage(void)
 {
-	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | control-endpoints | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5]\n", PROG_NAME, COMMAND_NAME);
+	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | endpoint-strategy | control-endpoints | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5]\n", PROG_NAME, COMMAND_NAME);
 }
 
 static void pretty_print(struct wgdevice *device)
@@ -365,6 +365,8 @@ static void pretty_print(struct wgdevice *device)
 			    terminal_printf("%s sent\n", bytes(peer->control_tx_bytes));
 		    }
 		}
+		if (peer->flags & WGPEER_HAS_ENDPOINT_STRATEGY && peer->endpoint_strategy)
+			terminal_printf("  " TERMINAL_BOLD "endpoint strategy" TERMINAL_RESET ": %s\n", peer->endpoint_strategy);
 		for (size_t i = 0; i < peer->endpoints_len; i++) {
 			struct wgendpoint *ep = &peer->endpoints[i];
 			if (ep->addr.ss_family == AF_INET || ep->addr.ss_family == AF_INET6) {
@@ -644,6 +646,13 @@ static bool ugly_print(struct wgdevice *device, const char *param, bool with_int
 					printf("%s\t", device->name);
 				printf("%s\t0\t(none)\t0\t0\t0\n", key(peer->public_key));
 			}
+		}
+	} else if (!strcmp(param, "endpoint-strategy")) {
+		for_each_wgpeer(device, peer) {
+			if (with_interface)
+				printf("%s\t", device->name);
+			printf("%s\t", key(peer->public_key));
+			printf("%s\n", (peer->flags & WGPEER_HAS_ENDPOINT_STRATEGY && peer->endpoint_strategy) ? peer->endpoint_strategy : "(none)");
 		}
 	} else if (!strcmp(param, "control-endpoints")) {
 		for_each_wgpeer(device, peer) {

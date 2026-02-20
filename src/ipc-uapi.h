@@ -146,6 +146,8 @@ static int userspace_set_device(struct wgdevice *dev)
 			key_to_hex(hex, peer->preshared_key);
 			fprintf(f, "preshared_key=%s\n", hex);
 		}
+		if (peer->flags & WGPEER_HAS_ENDPOINT_STRATEGY && peer->endpoint_strategy)
+			fprintf(f, "endpoint_strategy=%s\n", peer->endpoint_strategy);
 		/* Output data endpoints */
 		for (size_t i = 0; i < peer->endpoints_len; i++) {
 			struct wgendpoint *ep = &peer->endpoints[i];
@@ -410,6 +412,13 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 				break;
 			if (!key_is_zero(peer->preshared_key))
 				peer->flags |= WGPEER_HAS_PRESHARED_KEY;
+		} else if (peer && !strcmp(key, "endpoint_strategy")) {
+			peer->endpoint_strategy = strdup(value);
+			if (!peer->endpoint_strategy) {
+				ret = -ENOMEM;
+				goto err;
+			}
+			peer->flags |= WGPEER_HAS_ENDPOINT_STRATEGY;
 		} else if (peer && endpoint_index_from_key(key, "endpoint") > 0) {
 			int endpoint_index = endpoint_index_from_key(key, "endpoint");
 			char *begin, *end;

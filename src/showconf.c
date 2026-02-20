@@ -129,6 +129,8 @@ int showconf_main(int argc, const char *argv[])
 					printf("ControlEndpoint = %s:%s\n", ctrl_host, ctrl_service);
 			}
 		}
+		if (peer->flags & WGPEER_HAS_ENDPOINT_STRATEGY && peer->endpoint_strategy)
+			printf("EndpointStrategy = %s\n", peer->endpoint_strategy);
 
 		/* Output data endpoints */
 		for (size_t i = 0; i < peer->endpoints_len; i++) {
