@@ -223,20 +223,28 @@ static inline bool parse_endpoint(struct sockaddr *endpoint, const char *value, 
 		return false;
 	}
 
-	/* Strip optional trailing :bindPort (kernel/showconf format) */
-	last_colon = strrchr(mutable, ':');
-	if (last_colon && last_colon > mutable && *(last_colon + 1)) {
-		char *p = last_colon + 1;
-		for (; *p && char_is_digit(*p); p++)
-			;
-		if (*p == '\0' && p > last_colon + 1) {
-			*last_colon = '\0';
-			if (strrchr(mutable, ':')) {
-				unsigned long n = strtoul(last_colon + 1, NULL, 10);
-				if (n <= 0xFFFF && out_bind_port)
-					*out_bind_port = (uint16_t)n;
-			} else {
-				*last_colon = ':';
+	/* Strip optional trailing :bindPort (kernel/showconf format). For IPv6, only look after ']:' so we don't treat the peer port as bindPort. */
+	{
+		char *port_suffix = (mutable[0] == '[') ? NULL : mutable;
+		if (mutable[0] == '[') {
+			char *rb = strchr(mutable, ']');
+			if (rb && rb[1] == ':' && rb[2])
+				port_suffix = rb + 2;  /* after "]:", e.g. "34963" or "34963:30000" */
+		}
+		last_colon = port_suffix ? strrchr(port_suffix, ':') : NULL;
+		if (last_colon && last_colon > port_suffix && *(last_colon + 1)) {
+			char *p = last_colon + 1;
+			for (; *p && char_is_digit(*p); p++)
+				;
+			if (*p == '\0' && p > last_colon + 1) {
+				*last_colon = '\0';
+				if (last_colon > port_suffix) {
+					unsigned long n = strtoul(last_colon + 1, NULL, 10);
+					if (n <= 0xFFFF && out_bind_port)
+						*out_bind_port = (uint16_t)n;
+				} else {
+					*last_colon = ':';
+				}
 			}
 		}
 	}

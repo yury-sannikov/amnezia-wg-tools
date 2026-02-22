@@ -440,20 +440,28 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			ep->bind_port = 0;
 			if (!strlen(value))
 				break;
-			/* Strip optional trailing :bindPort from kernel format host:port:bindPort (or [ipv6]:port:bindPort) */
-			last_colon = strrchr(value, ':');
-			if (last_colon && last_colon > value && *(last_colon + 1)) {
-				char *p = last_colon + 1;
-				for (; *p && char_is_digit(*p); p++)
-					;
-				if (*p == '\0' && p > last_colon + 1) {
-					*last_colon = '\0';
-					if (strrchr(value, ':')) {
-						unsigned long n = strtoul(last_colon + 1, NULL, 10);
-						if (n <= 0xFFFF)
-							ep->bind_port = (uint16_t)n;
-					} else {
-						*last_colon = ':';
+			/* Strip optional trailing :bindPort. For IPv6 only look after ']:' so we don't treat the peer port as bindPort. */
+			{
+				char *port_suffix = (value[0] == '[') ? NULL : value;
+				if (value[0] == '[') {
+					char *rb = strchr(value, ']');
+					if (rb && rb[1] == ':' && rb[2])
+						port_suffix = rb + 2;
+				}
+				last_colon = port_suffix ? strrchr(port_suffix, ':') : NULL;
+				if (last_colon && last_colon > port_suffix && *(last_colon + 1)) {
+					char *p = last_colon + 1;
+					for (; *p && char_is_digit(*p); p++)
+						;
+					if (*p == '\0' && p > last_colon + 1) {
+						*last_colon = '\0';
+						if (last_colon > port_suffix) {
+							unsigned long n = strtoul(last_colon + 1, NULL, 10);
+							if (n <= 0xFFFF)
+								ep->bind_port = (uint16_t)n;
+						} else {
+							*last_colon = ':';
+						}
 					}
 				}
 			}
