@@ -449,19 +449,18 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 						port_suffix = rb + 2;
 				}
 				last_colon = port_suffix ? strrchr(port_suffix, ':') : NULL;
-				if (last_colon && last_colon > port_suffix && *(last_colon + 1)) {
+				/* Only strip when there are at least two colons (host:port:bindPort), not host:port */
+				if (last_colon && last_colon > port_suffix && *(last_colon + 1) && strchr(port_suffix, ':') != last_colon) {
 					char *p = last_colon + 1;
 					for (; *p && char_is_digit(*p); p++)
 						;
 					if (*p == '\0' && p > last_colon + 1) {
 						*last_colon = '\0';
-						if (last_colon > port_suffix) {
-							unsigned long n = strtoul(last_colon + 1, NULL, 10);
-							if (n <= 0xFFFF)
-								ep->bind_port = (uint16_t)n;
-						} else {
-							*last_colon = ':';
-						}
+						unsigned long n = strtoul(last_colon + 1, NULL, 10);
+						if (n <= 0xFFFF)
+							ep->bind_port = (uint16_t)n;
+					} else {
+						*last_colon = ':';
 					}
 				}
 			}
