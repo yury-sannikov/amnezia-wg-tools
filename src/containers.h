@@ -58,6 +58,8 @@ struct wgendpoint {
 	uint16_t peer_loss_history[WG_LOSS_HISTORY_SIZE];
 	size_t loss_history_len;
 	size_t peer_loss_history_len;
+	/* Local bind port for this endpoint (from IPC Get endpointN=host:port:bindPort; 0 = not set) */
+	uint16_t bind_port;
 };
 
 enum {

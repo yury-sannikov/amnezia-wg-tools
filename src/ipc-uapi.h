@@ -158,7 +158,12 @@ static int userspace_set_device(struct wgdevice *dev)
 				else if (ep->addr.ss_family == AF_INET6)
 					addr_len = sizeof(struct sockaddr_in6);
 				if (!getnameinfo((struct sockaddr *)&ep->addr, addr_len, host, sizeof(host), service, sizeof(service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST)) {
-					if (ep->addr.ss_family == AF_INET6 && strchr(host, ':'))
+					if (ep->bind_port) {
+						if (ep->addr.ss_family == AF_INET6 && strchr(host, ':'))
+							fprintf(f, "endpoint%zu=[%s]:%s:%u\n", i + 1, host, service, ep->bind_port);
+						else
+							fprintf(f, "endpoint%zu=%s:%s:%u\n", i + 1, host, service, ep->bind_port);
+					} else if (ep->addr.ss_family == AF_INET6 && strchr(host, ':'))
 						fprintf(f, "endpoint%zu=[%s]:%s\n", i + 1, host, service);
 					else
 						fprintf(f, "endpoint%zu=%s:%s\n", i + 1, host, service);
@@ -422,6 +427,7 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 		} else if (peer && endpoint_index_from_key(key, "endpoint") > 0) {
 			int endpoint_index = endpoint_index_from_key(key, "endpoint");
 			char *begin, *end;
+			char *last_colon;
 			struct addrinfo *resolved;
 			struct addrinfo hints = {
 				.ai_family = AF_UNSPEC,
@@ -431,8 +437,26 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
 			if (!ep)
 				break;
+			ep->bind_port = 0;
 			if (!strlen(value))
 				break;
+			/* Strip optional trailing :bindPort from kernel format host:port:bindPort (or [ipv6]:port:bindPort) */
+			last_colon = strrchr(value, ':');
+			if (last_colon && last_colon > value && *(last_colon + 1)) {
+				char *p = last_colon + 1;
+				for (; *p && char_is_digit(*p); p++)
+					;
+				if (*p == '\0' && p > last_colon + 1) {
+					*last_colon = '\0';
+					if (strrchr(value, ':')) {
+						unsigned long n = strtoul(last_colon + 1, NULL, 10);
+						if (n <= 0xFFFF)
+							ep->bind_port = (uint16_t)n;
+					} else {
+						*last_colon = ':';
+					}
+				}
+			}
 			if (value[0] == '[') {
 				begin = &value[1];
 				end = strchr(value, ']');

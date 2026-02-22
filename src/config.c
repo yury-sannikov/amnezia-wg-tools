@@ -201,13 +201,18 @@ static inline bool parse_single_endpoint(struct sockaddr *endpoint, const char *
 	return true;
 }
 
-/* Parse endpoint in format "host:port" or "[ipv6]:port" */
-static inline bool parse_endpoint(struct sockaddr *endpoint, const char *value)
+/* Parse endpoint in format "host:port", "[ipv6]:port", or "host:port:bindPort" / "[ipv6]:port:bindPort".
+ * When out_bind_port is non-NULL and value has optional :bindPort, sets *out_bind_port.
+ */
+static inline bool parse_endpoint(struct sockaddr *endpoint, const char *value, uint16_t *out_bind_port)
 {
 	char *mutable = strdup(value);
 	char *begin, *port_str;
+	char *last_colon;
 	bool ret;
 
+	if (out_bind_port)
+		*out_bind_port = 0;
 	if (!mutable) {
 		perror("strdup");
 		return false;
@@ -216,6 +221,24 @@ static inline bool parse_endpoint(struct sockaddr *endpoint, const char *value)
 		free(mutable);
 		fprintf(stderr, "Unable to parse empty endpoint\n");
 		return false;
+	}
+
+	/* Strip optional trailing :bindPort (kernel/showconf format) */
+	last_colon = strrchr(mutable, ':');
+	if (last_colon && last_colon > mutable && *(last_colon + 1)) {
+		char *p = last_colon + 1;
+		for (; *p && char_is_digit(*p); p++)
+			;
+		if (*p == '\0' && p > last_colon + 1) {
+			*last_colon = '\0';
+			if (strrchr(mutable, ':')) {
+				unsigned long n = strtoul(last_colon + 1, NULL, 10);
+				if (n <= 0xFFFF && out_bind_port)
+					*out_bind_port = (uint16_t)n;
+			} else {
+				*last_colon = ':';
+			}
+		}
 	}
 
 	if (mutable[0] == '[') {
@@ -809,16 +832,20 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 			}
 			ctx->expected_endpoint_index = endpoint_index;
 			struct sockaddr_storage endpoint_addr;
+			uint16_t bind_port = 0;
 			memset(&endpoint_addr, 0, sizeof(endpoint_addr));
-			ret = parse_endpoint((struct sockaddr *)&endpoint_addr, endpoint_value);
-			if (ret)
+			ret = parse_endpoint((struct sockaddr *)&endpoint_addr, endpoint_value, &bind_port);
+			if (ret) {
 				ret = add_peer_endpoint(ctx->last_peer, (struct sockaddr *)&endpoint_addr);
+				if (ret && bind_port && ctx->last_peer->endpoints_len > 0)
+					ctx->last_peer->endpoints[ctx->last_peer->endpoints_len - 1].bind_port = bind_port;
+			}
 		} else if (key_match("Endpoint")) {
 			fprintf(stderr, "Endpoint is deprecated, use Endpoint1, Endpoint2, ...\n");
 			ret = false;
 		}
 		else if (key_match("ControlEndpoint")) {
-			ret = parse_endpoint(&ctx->last_peer->control_endpoint.addr, value);
+			ret = parse_endpoint(&ctx->last_peer->control_endpoint.addr, value, NULL);
 			if (ret)
 				ctx->last_peer->flags |= WGPEER_HAS_CONTROL_ENDPOINT;
 		} else if (key_match("EndpointStrategy")) {
@@ -1171,18 +1198,21 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 				}
 				expected_endpoint_index = endpoint_index;
 				struct sockaddr_storage endpoint_addr;
+				uint16_t bind_port = 0;
 				memset(&endpoint_addr, 0, sizeof(endpoint_addr));
-				if (!parse_endpoint((struct sockaddr *)&endpoint_addr, argv[1]))
+				if (!parse_endpoint((struct sockaddr *)&endpoint_addr, argv[1], &bind_port))
 					goto error;
 				if (!add_peer_endpoint(peer, (struct sockaddr *)&endpoint_addr))
 					goto error;
+				if (bind_port && peer->endpoints_len > 0)
+					peer->endpoints[peer->endpoints_len - 1].bind_port = bind_port;
 				argv += 2;
 				argc -= 2;
 			} else if (!strcmp(argv[0], "endpoint")) {
 				fprintf(stderr, "endpoint is deprecated, use endpoint1, endpoint2, ...\n");
 				goto error;
 			} else if (!strcmp(argv[0], "control-endpoint") && argc >= 2) {
-				if (!parse_endpoint(&peer->control_endpoint.addr, argv[1]))
+				if (!parse_endpoint(&peer->control_endpoint.addr, argv[1], NULL))
 					goto error;
 				peer->flags |= WGPEER_HAS_CONTROL_ENDPOINT;
 				argv += 2;

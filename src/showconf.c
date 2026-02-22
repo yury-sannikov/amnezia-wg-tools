@@ -146,7 +146,12 @@ int showconf_main(int argc, const char *argv[])
 					addr_len = sizeof(struct sockaddr_in6);
 
 				if (!getnameinfo((struct sockaddr *)&ep->addr, addr_len, host, sizeof(host), service, sizeof(service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST)) {
-					if (ep->addr.ss_family == AF_INET6 && strchr(host, ':'))
+					if (ep->bind_port) {
+						if (ep->addr.ss_family == AF_INET6 && strchr(host, ':'))
+							printf("Endpoint%zu = [%s]:%s:%u\n", i + 1, host, service, ep->bind_port);
+						else
+							printf("Endpoint%zu = %s:%s:%u\n", i + 1, host, service, ep->bind_port);
+					} else if (ep->addr.ss_family == AF_INET6 && strchr(host, ':'))
 						printf("Endpoint%zu = [%s]:%s\n", i + 1, host, service);
 					else
 						printf("Endpoint%zu = %s:%s\n", i + 1, host, service);

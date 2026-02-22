@@ -211,7 +211,9 @@ If the user specifically wants "RX loss" and we don't have it, add a note in the
 
 1. Extend `struct wgendpoint` with loss history arrays.
 2. Parse `endpoint_loss_history%d` and `endpoint_peer_loss_history%d` in ipc-uapi.h.
-3. Implement `loss_to_braille()` with logarithmic scale (0→full, 500+→1 dot).
+3. Implement `loss_to_braille()` with logarithmic scale (0→full, 500+→1 dot, 1000→space).
 4. Implement `print_loss_line()` to format "    TX loss: X/1000   ⣿⣿⣿…".
 5. Call from `pretty_print` for each endpoint.
-6. Document that "RX loss" requires UAPI extension; for now show "TX loss" and "TX loss (peer)".
+6. **RX loss** (renamed from "TX loss (peer)"): peer's view of our TX loss.
+7. **Valid history only**: amneziawg-go sends only written entries via LossHistoryValid/PeerLossHistoryValid; C pads with spaces so bars align (16 chars total).
+8. **Fixed-width number** (%4u) so TX and RX bars start at same column.
