@@ -118,6 +118,10 @@ static char *endpoint(const struct sockaddr *addr)
 	else if (addr->sa_family == AF_INET6)
 		addr_len = sizeof(struct sockaddr_in6);
 
+	if (addr_len == 0) {
+		snprintf(buf, sizeof(buf), "(invalid)");
+		return buf;
+	}
 	ret = getnameinfo(addr, addr_len, host, sizeof(host), service, sizeof(service), NI_DGRAM | NI_NUMERICSERV | NI_NUMERICHOST);
 	if (ret) {
 		strncpy(buf, gai_strerror(ret), sizeof(buf) - 1);
@@ -268,13 +272,26 @@ static void loss_to_braille_utf8(char buf[4], uint16_t loss_per_1k)
 	}
 }
 
-/* Print loss line: fixed-width number (4 chars) so TX and RX bars align. Pad to 16 chars total. */
-static void print_loss_line(const char *label, uint16_t current, const uint16_t *history, size_t len)
+/* Compute average loss per 1000 over history (rounded). */
+static uint16_t loss_history_avg(const uint16_t *history, size_t len)
+{
+	unsigned int sum = 0;
+	size_t i;
+	if (len == 0)
+		return 0;
+	for (i = 0; i < len; i++)
+		sum += history[i];
+	return (uint16_t)((sum + len / 2) / len); /* rounded */
+}
+
+/* Print loss line: fixed-width number (4 chars) so TX and RX bars align. Pad to 16 chars total.
+ * value_display is the number shown (e.g. average); history is used for the braille bar. */
+static void print_loss_line(const char *label, uint16_t value_display, const uint16_t *history, size_t len)
 {
 	char braille[4];
 	size_t i;
 
-	terminal_printf("    " TERMINAL_BOLD "%s" TERMINAL_RESET ": %4u/1000   ", label, (unsigned int)current);
+	terminal_printf("    " TERMINAL_BOLD "%s" TERMINAL_RESET ": %4u/1000   ", label, (unsigned int)value_display);
 	for (i = 0; i < len; i++) {
 		loss_to_braille_utf8(braille, history[i]);
 		terminal_printf("%s", braille);
@@ -396,12 +413,12 @@ static void pretty_print(struct wgdevice *device)
 				if (ep->rtt_nanos > 0)
 					terminal_printf("    " TERMINAL_BOLD "RTT" TERMINAL_RESET ": %s\n", rtt_str(ep->rtt_nanos));
 				if (ep->loss_history_len > 0) {
-					uint16_t tx_current = ep->loss_history[ep->loss_history_len - 1];
-					print_loss_line("TX loss", tx_current, ep->loss_history, ep->loss_history_len);
+					uint16_t tx_avg = loss_history_avg(ep->loss_history, ep->loss_history_len);
+					print_loss_line("TX loss", tx_avg, ep->loss_history, ep->loss_history_len);
 				}
 				if (ep->peer_loss_history_len > 0) {
-					uint16_t rx_current = ep->peer_loss_history[ep->peer_loss_history_len - 1];
-					print_loss_line("RX loss", rx_current, ep->peer_loss_history, ep->peer_loss_history_len);
+					uint16_t rx_avg = loss_history_avg(ep->peer_loss_history, ep->peer_loss_history_len);
+					print_loss_line("RX loss", rx_avg, ep->peer_loss_history, ep->peer_loss_history_len);
 				}
 			}
 		}

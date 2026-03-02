@@ -443,14 +443,17 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			/* Strip optional trailing :bindPort. For IPv6 only look after ']:' so we don't treat the peer port as bindPort. */
 			{
 				char *port_suffix = (value[0] == '[') ? NULL : value;
+				int is_ipv6_suffix = 0;
 				if (value[0] == '[') {
 					char *rb = strchr(value, ']');
 					if (rb && rb[1] == ':' && rb[2])
 						port_suffix = rb + 2;
+					is_ipv6_suffix = (port_suffix != NULL);
 				}
 				last_colon = port_suffix ? strrchr(port_suffix, ':') : NULL;
-				/* Only strip when there are at least two colons (host:port:bindPort), not host:port */
-				if (last_colon && last_colon > port_suffix && *(last_colon + 1) && strchr(port_suffix, ':') != last_colon) {
+				/* Strip when we have port:bindPort. For IPv6 suffix it's "port:bindPort" (one colon); for IPv4 we need two colons so strchr != last_colon. */
+				if (last_colon && last_colon > port_suffix && *(last_colon + 1) &&
+				    (is_ipv6_suffix || strchr(port_suffix, ':') != last_colon)) {
 					char *p = last_colon + 1;
 					for (; *p && char_is_digit(*p); p++)
 						;
@@ -459,7 +462,7 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 						unsigned long n = strtoul(last_colon + 1, NULL, 10);
 						if (n <= 0xFFFF)
 							ep->bind_port = (uint16_t)n;
-					} else {
+					} else if (!is_ipv6_suffix) {
 						*last_colon = ':';
 					}
 				}
@@ -490,8 +493,12 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 				freeaddrinfo(resolved);
 				break;
 			}
-			if (endpoint_index == 1)
-				memcpy(&peer->endpoint.addr, &ep->addr, sizeof(peer->endpoint));
+			if (endpoint_index == 1) {
+				if (ep->addr.ss_family == AF_INET)
+					memcpy(&peer->endpoint.addr, &ep->addr, sizeof(struct sockaddr_in));
+				else if (ep->addr.ss_family == AF_INET6)
+					memcpy(&peer->endpoint.addr, &ep->addr, sizeof(struct sockaddr_in6));
+			}
 			freeaddrinfo(resolved);
 		} else if (peer && endpoint_index_from_key(key, "endpoint_state") > 0) {
 			int endpoint_index = endpoint_index_from_key(key, "endpoint_state");
