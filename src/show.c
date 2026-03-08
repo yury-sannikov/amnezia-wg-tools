@@ -304,7 +304,7 @@ static void print_loss_line(const char *label, uint16_t value_display, const uin
 static const char *COMMAND_NAME;
 static void show_usage(void)
 {
-	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | endpoint-strategy | control-endpoints | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5]\n", PROG_NAME, COMMAND_NAME);
+	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | endpoint-strategy | control-endpoints | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | probe | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5]\n", PROG_NAME, COMMAND_NAME);
 }
 
 static void pretty_print(struct wgdevice *device)
@@ -435,6 +435,8 @@ static void pretty_print(struct wgdevice *device)
 		}
 		if (peer->persistent_keepalive_interval)
 			terminal_printf("  " TERMINAL_BOLD "persistent keepalive" TERMINAL_RESET ": %s\n", every(peer->persistent_keepalive_interval));
+		if (peer->flags & WGPEER_HAS_PROBE)
+			terminal_printf("  " TERMINAL_BOLD "probe" TERMINAL_RESET ": every %u s, %d tests\n", peer->probe_timeout_sec, peer->probe_num_tests);
 		if (peer->next_peer)
 			terminal_printf("\n");
 	}
@@ -535,7 +537,11 @@ static void dump_print(struct wgdevice *device, bool with_interface)
 		printf("%" PRIu64 "\t%" PRIu64 "\t", (uint64_t)peer->rx_bytes, (uint64_t)peer->tx_bytes);
 		printf("%" PRIu64 "\t%" PRIu64 "\t", (uint64_t)peer->control_rx_bytes, (uint64_t)peer->control_tx_bytes);
 		if (peer->persistent_keepalive_interval)
-			printf("%u\n", peer->persistent_keepalive_interval);
+			printf("%u\t", peer->persistent_keepalive_interval);
+		else
+			printf("off\t");
+		if (peer->flags & WGPEER_HAS_PROBE)
+			printf("%u:%d\n", peer->probe_timeout_sec, peer->probe_num_tests);
 		else
 			printf("off\n");
 	}
@@ -724,6 +730,15 @@ static bool ugly_print(struct wgdevice *device, const char *param, bool with_int
 				printf("%s\t", device->name);
 			if (peer->persistent_keepalive_interval)
 				printf("%s\t%u\n", key(peer->public_key), peer->persistent_keepalive_interval);
+			else
+				printf("%s\toff\n", key(peer->public_key));
+		}
+	} else if (!strcmp(param, "probe")) {
+		for_each_wgpeer(device, peer) {
+			if (with_interface)
+				printf("%s\t", device->name);
+			if (peer->flags & WGPEER_HAS_PROBE)
+				printf("%s\t%u:%d\n", key(peer->public_key), peer->probe_timeout_sec, peer->probe_num_tests);
 			else
 				printf("%s\toff\n", key(peer->public_key));
 		}

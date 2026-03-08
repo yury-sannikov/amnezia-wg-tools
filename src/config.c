@@ -532,6 +532,41 @@ err:
 	return false;
 }
 
+static inline bool parse_probe(uint32_t *timeout_sec, int *num_tests, uint32_t *flags, const char *value)
+{
+	char *colon;
+	unsigned long t;
+	long n;
+	char *end;
+
+	colon = strchr(value, ':');
+	if (!colon || colon == value || !colon[1]) {
+		fprintf(stderr, "Probe must be timeout:num_tests (e.g. 30:3): `%s'\n", value);
+		return false;
+	}
+	*colon = '\0';
+	if (!char_is_digit(value[0])) {
+		*colon = ':';
+		fprintf(stderr, "Probe timeout must be a non-negative number: `%s'\n", value);
+		return false;
+	}
+	t = strtoul(value, &end, 10);
+	*colon = ':';
+	if (*end || t > 0xffffffffUL) {
+		fprintf(stderr, "Probe timeout out of range: `%s'\n", value);
+		return false;
+	}
+	n = strtol(colon + 1, &end, 10);
+	if (*end || n < 0 || n > INT_MAX) {
+		fprintf(stderr, "Probe num_tests must be 0 or positive: `%s'\n", value);
+		return false;
+	}
+	*timeout_sec = (uint32_t)t;
+	*num_tests = (int)n;
+	*flags |= WGPEER_HAS_PROBE;
+	return true;
+}
+
 static bool validate_netmask(struct wgallowedip *allowedip)
 {
 	uint32_t *ip;
@@ -870,6 +905,8 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 			ret = parse_allowedips(ctx->last_peer, &ctx->last_allowedip, value);
 		else if (key_match("PersistentKeepalive"))
 			ret = parse_persistent_keepalive(&ctx->last_peer->persistent_keepalive_interval, &ctx->last_peer->flags, value);
+		else if (key_match("Probe"))
+			ret = parse_probe(&ctx->last_peer->probe_timeout_sec, &ctx->last_peer->probe_num_tests, &ctx->last_peer->flags, value);
 		else if (key_match("PresharedKey")) {
 			ret = parse_key(ctx->last_peer->preshared_key, value);
 			if (ret)
@@ -1247,6 +1284,11 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 				argc -= 2;
 			} else if (!strcmp(argv[0], "persistent-keepalive") && argc >= 2) {
 				if (!parse_persistent_keepalive(&peer->persistent_keepalive_interval, &peer->flags, argv[1]))
+					goto error;
+				argv += 2;
+				argc -= 2;
+			} else if (!strcmp(argv[0], "probe") && argc >= 2) {
+				if (!parse_probe(&peer->probe_timeout_sec, &peer->probe_num_tests, &peer->flags, argv[1]))
 					goto error;
 				argv += 2;
 				argc -= 2;

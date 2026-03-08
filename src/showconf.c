@@ -161,6 +161,8 @@ int showconf_main(int argc, const char *argv[])
 
 		if (peer->persistent_keepalive_interval)
 			printf("PersistentKeepalive = %u\n", peer->persistent_keepalive_interval);
+		if (peer->flags & WGPEER_HAS_PROBE)
+			printf("Probe = %u:%d\n", peer->probe_timeout_sec, peer->probe_num_tests);
 
 		if (peer->next_peer)
 			printf("\n");

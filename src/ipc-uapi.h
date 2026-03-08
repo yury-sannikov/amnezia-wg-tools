@@ -189,6 +189,8 @@ static int userspace_set_device(struct wgdevice *dev)
 		}
 		if (peer->flags & WGPEER_HAS_PERSISTENT_KEEPALIVE_INTERVAL)
 			fprintf(f, "persistent_keepalive_interval=%u\n", peer->persistent_keepalive_interval);
+		if (peer->flags & WGPEER_HAS_PROBE)
+			fprintf(f, "probe=%u:%d\n", peer->probe_timeout_sec, peer->probe_num_tests);
 		if (peer->flags & WGPEER_REPLACE_ALLOWEDIPS)
 			fprintf(f, "replace_allowed_ips=true\n");
 		for_each_wgallowedip(peer, allowedip) {
@@ -613,6 +615,26 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 				break;
 			}
 			freeaddrinfo(resolved);
+		} else if (peer && !strcmp(key, "probe")) {
+			char *colon = strchr(value, ':');
+			unsigned long timeout_val;
+			long num_tests_val;
+			char *end;
+			if (!colon || colon == value || !colon[1])
+				break;
+			*colon = '\0';
+			if (!char_is_digit(value[0]))
+				break;
+			timeout_val = strtoul(value, &end, 10);
+			if (*end || timeout_val > 0xffffffffU)
+				break;
+			num_tests_val = strtol(colon + 1, &end, 10);
+			*colon = ':';
+			if (*end || num_tests_val < 0 || num_tests_val > INT_MAX)
+				break;
+			peer->probe_timeout_sec = (uint32_t)timeout_val;
+			peer->probe_num_tests = (int)num_tests_val;
+			peer->flags |= WGPEER_HAS_PROBE;
 		} else if (peer && !strcmp(key, "persistent_keepalive_interval")) {
 			peer->persistent_keepalive_interval = NUM(0xffffU);
 			peer->flags |= WGPEER_HAS_PERSISTENT_KEEPALIVE_INTERVAL;

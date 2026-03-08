@@ -70,7 +70,8 @@ enum {
 	WGPEER_HAS_PERSISTENT_KEEPALIVE_INTERVAL = 1U << 4,
 	WGPEER_HAS_AWG = 1U << 5,
 	WGPEER_HAS_CONTROL_ENDPOINT = 1U << 6,
-	WGPEER_HAS_ENDPOINT_STRATEGY = 1U << 7
+	WGPEER_HAS_ENDPOINT_STRATEGY = 1U << 7,
+	WGPEER_HAS_PROBE = 1U << 8
 };
 
 struct wgpeer {
@@ -96,6 +97,8 @@ struct wgpeer {
 	uint64_t rx_bytes, tx_bytes;                       /* Data socket bytes */
 	uint64_t control_rx_bytes, control_tx_bytes;       /* Control socket bytes */
 	uint16_t persistent_keepalive_interval;
+	uint32_t probe_timeout_sec;
+	int probe_num_tests;
 
 	bool awg;
 
