@@ -513,6 +513,12 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 				ep->state = 1;
 			else if (!strcmp(value, "error"))
 				ep->state = 2;
+		} else if (peer && endpoint_index_from_key(key, "endpoint_is_initiator") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_is_initiator");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
+			ep->is_initiator = !strcmp(value, "true");
 		} else if (peer && endpoint_index_from_key(key, "endpoint_tx_bytes") > 0) {
 			int endpoint_index = endpoint_index_from_key(key, "endpoint_tx_bytes");
 			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);

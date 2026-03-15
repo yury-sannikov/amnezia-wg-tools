@@ -60,6 +60,7 @@ struct wgendpoint {
 	size_t peer_loss_history_len;
 	/* Local bind port for this endpoint (from IPC Get endpointN=host:port:bindPort; 0 = not set) */
 	uint16_t bind_port;
+	bool is_initiator; /* true = configured outbound endpoint, false = learned from incoming packets */
 };
 
 enum {
