@@ -549,6 +549,18 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			if (!ep)
 				break;
 			ep->rtt_nanos = (int64_t)NUM(0x7fffffffffffffffULL);
+		} else if (peer && endpoint_index_from_key(key, "endpoint_tx_rank") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_tx_rank");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
+			ep->tx_rank = (uint16_t)NUM(0xffffU);
+		} else if (peer && endpoint_index_from_key(key, "endpoint_avg_loss") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_avg_loss");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
+			ep->avg_loss = (uint16_t)NUM(1000U);
 		} else if (peer && endpoint_index_from_key(key, "endpoint_loss_history") > 0) {
 			int endpoint_index = endpoint_index_from_key(key, "endpoint_loss_history");
 			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);

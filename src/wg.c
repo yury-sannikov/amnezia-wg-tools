@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0 OR MIT
 /*
- * Copyright (C) 2015-2020 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
+ * Copyright (C) 2015-2020 Jason A. Donenfeld. All Rights Reserved.
  */
 
-#include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "subcommands.h"
@@ -25,7 +25,8 @@ static const struct {
 	{ "syncconf", setconf_main, "Synchronizes a configuration file to a WireGuard interface" },
 	{ "genkey", genkey_main, "Generates a new private key and writes it to stdout" },
 	{ "genpsk", genkey_main, "Generates a new preshared key and writes it to stdout" },
-	{ "pubkey", pubkey_main, "Reads a private key from stdin and writes a public key to stdout" }
+	{ "pubkey", pubkey_main, "Reads a private key from stdin and writes a public key to stdout" },
+	{ "metrics", metrics_main, "Shows peer metrics in JSON format" }
 };
 
 static void show_usage(FILE *file)

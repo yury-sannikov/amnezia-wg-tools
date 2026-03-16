@@ -61,6 +61,8 @@ struct wgendpoint {
 	/* Local bind port for this endpoint (from IPC Get endpointN=host:port:bindPort; 0 = not set) */
 	uint16_t bind_port;
 	bool is_initiator; /* true = configured outbound endpoint, false = learned from incoming packets */
+	uint16_t tx_rank;  /* 0 = not selected for TX, 1 = primary, 2 = secondary, etc. */
+	uint16_t avg_loss; /* average loss per 1000 (from UAPI endpoint_avg_loss) */
 };
 
 enum {
