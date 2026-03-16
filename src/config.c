@@ -544,6 +544,7 @@ static inline bool parse_probe(uint32_t *timeout_sec, int *num_tests, uint32_t *
 		fprintf(stderr, "Probe must be timeout:num_tests (e.g. 30:3): `%s'\n", value);
 		return false;
 	}
+	/* Temporarily terminate the timeout part so strtoul stops at the colon. */
 	*colon = '\0';
 	if (!char_is_digit(value[0])) {
 		*colon = ':';
@@ -551,11 +552,15 @@ static inline bool parse_probe(uint32_t *timeout_sec, int *num_tests, uint32_t *
 		return false;
 	}
 	t = strtoul(value, &end, 10);
-	*colon = ':';
+	/* At this point, end points to the temporary NUL we wrote at the colon.
+	 * We must validate *end while the buffer is still NUL-terminated, and
+	 * only then restore the original ':' character. */
 	if (*end || t > 0xffffffffUL) {
+		*colon = ':';
 		fprintf(stderr, "Probe timeout out of range: `%s'\n", value);
 		return false;
 	}
+	*colon = ':';
 	n = strtol(colon + 1, &end, 10);
 	if (*end || n < 0 || n > INT_MAX) {
 		fprintf(stderr, "Probe num_tests must be 0 or positive: `%s'\n", value);
