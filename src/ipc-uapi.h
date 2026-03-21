@@ -167,8 +167,12 @@ static int userspace_set_device(struct wgdevice *dev)
 						fprintf(f, "endpoint%zu=[%s]:%s\n", i + 1, host, service);
 					else
 						fprintf(f, "endpoint%zu=%s:%s\n", i + 1, host, service);
-					if (ep->obf_type == 1)
-						fprintf(f, "endpoint_obf%zu=quic\n", i + 1);
+					if (ep->obf_type == 1) {
+						if (ep->obf_sni[0])
+							fprintf(f, "endpoint_obf%zu=quic:%s\n", i + 1, ep->obf_sni);
+						else
+							fprintf(f, "endpoint_obf%zu=quic\n", i + 1);
+					}
 				}
 			}
 		}
@@ -602,10 +606,16 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
 			if (!ep)
 				break;
-			if (!strcmp(value, "quic"))
+			if (!strcmp(value, "quic")) {
 				ep->obf_type = 1;
-			else
+				ep->obf_sni[0] = '\0';
+			} else if (!strncmp(value, "quic:", 5)) {
+				ep->obf_type = 1;
+				snprintf(ep->obf_sni, sizeof(ep->obf_sni), "%s", value + 5);
+			} else {
 				ep->obf_type = 0;
+				ep->obf_sni[0] = '\0';
+			}
 		} else if (peer && !strcmp(key, "control_endpoint")) {
 			char *begin, *end;
 			struct addrinfo *resolved;

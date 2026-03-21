@@ -928,12 +928,17 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 			}
 			{
 				struct wgendpoint *ep = &ctx->last_peer->endpoints[obf_index - 1];
-				if (!strcasecmp(obf_value, "quic"))
+				if (!strcasecmp(obf_value, "quic")) {
 					ep->obf_type = 1;
-				else if (!strcasecmp(obf_value, "none") || !*obf_value)
+					ep->obf_sni[0] = '\0';
+				} else if (!strncasecmp(obf_value, "quic:", 5)) {
+					ep->obf_type = 1;
+					snprintf(ep->obf_sni, sizeof(ep->obf_sni), "%s", obf_value + 5);
+				} else if (!strcasecmp(obf_value, "none") || !*obf_value) {
 					ep->obf_type = 0;
-				else {
-					fprintf(stderr, "Invalid EndpointObf%d value (use quic or none)\n", obf_index);
+					ep->obf_sni[0] = '\0';
+				} else {
+					fprintf(stderr, "Invalid EndpointObf%d value (use quic, quic:<domain>, or none)\n", obf_index);
 					ret = false;
 					goto error;
 				}
@@ -1312,12 +1317,19 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 					fprintf(stderr, "endpoint_obf%d: configure endpoint%d first\n", obf_idx, obf_idx);
 					goto error;
 				}
-				if (!strcasecmp(argv[1], "quic"))
+				if (!strcasecmp(argv[1], "quic")) {
 					peer->endpoints[obf_idx - 1].obf_type = 1;
-				else if (!strcasecmp(argv[1], "none") || !argv[1][0])
+					peer->endpoints[obf_idx - 1].obf_sni[0] = '\0';
+				} else if (!strncasecmp(argv[1], "quic:", 5)) {
+					peer->endpoints[obf_idx - 1].obf_type = 1;
+					snprintf(peer->endpoints[obf_idx - 1].obf_sni,
+						sizeof(peer->endpoints[obf_idx - 1].obf_sni),
+						"%s", argv[1] + 5);
+				} else if (!strcasecmp(argv[1], "none") || !argv[1][0]) {
 					peer->endpoints[obf_idx - 1].obf_type = 0;
-				else {
-					fprintf(stderr, "Invalid endpoint_obf value (use quic or none)\n");
+					peer->endpoints[obf_idx - 1].obf_sni[0] = '\0';
+				} else {
+					fprintf(stderr, "Invalid endpoint_obf value (use quic, quic:<domain>, or none)\n");
 					goto error;
 				}
 				argv += 2;

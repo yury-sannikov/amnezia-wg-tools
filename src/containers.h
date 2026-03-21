@@ -64,6 +64,7 @@ struct wgendpoint {
 	uint16_t tx_rank;  /* 0 = not selected for TX, 1 = primary, 2 = secondary, etc. */
 	uint16_t avg_loss; /* average loss per 1000 (from UAPI endpoint_avg_loss) */
 	uint8_t obf_type;  /* 0 = none (default bwg:high-entropy), 1 = quic */
+	char obf_sni[256]; /* pinned SNI for quic obfuscation; empty = random decoy */
 };
 
 enum {
