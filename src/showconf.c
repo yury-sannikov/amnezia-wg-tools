@@ -155,6 +155,8 @@ int showconf_main(int argc, const char *argv[])
 						printf("Endpoint%zu = [%s]:%s\n", i + 1, host, service);
 					else
 						printf("Endpoint%zu = %s:%s\n", i + 1, host, service);
+					if (ep->obf_type == 1)
+						printf("EndpointObf%zu = quic\n", i + 1);
 				}
 			}
 		}

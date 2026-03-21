@@ -485,9 +485,53 @@ static int endpoint_index_from_line(const char *line, const char **value_out)
 	return (int)index;
 }
 
+/* EndpointObf1 = quic  ->  UAPI endpoint_obf1=quic */
+static int endpoint_obf_index_from_line(const char *line, const char **value_out)
+{
+	const char *prefix = "EndpointObf";
+	size_t prefix_len = strlen(prefix);
+	const char *p = line;
+	unsigned long index = 0;
+
+	if (strncasecmp(line, prefix, prefix_len))
+		return 0;
+	p += prefix_len;
+	if (!char_is_digit(*p))
+		return 0;
+	while (char_is_digit(*p)) {
+		index = index * 10 + (*p - '0');
+		p++;
+	}
+	if (*p != '=' || index == 0)
+		return 0;
+	*value_out = p + 1;
+	return (int)index;
+}
+
 static int endpoint_index_from_arg(const char *arg)
 {
 	const char *prefix = "endpoint";
+	size_t prefix_len = strlen(prefix);
+	const char *p = arg;
+	unsigned long index = 0;
+
+	if (strncasecmp(arg, prefix, prefix_len))
+		return 0;
+	p += prefix_len;
+	if (!char_is_digit(*p))
+		return 0;
+	while (char_is_digit(*p)) {
+		index = index * 10 + (*p - '0');
+		p++;
+	}
+	if (*p != '\0' || index == 0)
+		return 0;
+	return (int)index;
+}
+
+static int endpoint_obf_index_from_arg(const char *arg)
+{
+	const char *prefix = "endpoint_obf";
 	size_t prefix_len = strlen(prefix);
 	const char *p = arg;
 	unsigned long index = 0;
@@ -873,8 +917,28 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 		}
 	} else if (ctx->is_peer_section) {
 		const char *endpoint_value = NULL;
-		int endpoint_index = endpoint_index_from_line(line, &endpoint_value);
-		if (endpoint_index > 0) {
+		const char *obf_value = NULL;
+		int endpoint_index;
+		int obf_index = endpoint_obf_index_from_line(line, &obf_value);
+		if (obf_index > 0) {
+			if (obf_index > (int)ctx->last_peer->endpoints_len) {
+				fprintf(stderr, "EndpointObf%d: configure Endpoint%d first\n", obf_index, obf_index);
+				ret = false;
+				goto error;
+			}
+			{
+				struct wgendpoint *ep = &ctx->last_peer->endpoints[obf_index - 1];
+				if (!strcasecmp(obf_value, "quic"))
+					ep->obf_type = 1;
+				else if (!strcasecmp(obf_value, "none") || !*obf_value)
+					ep->obf_type = 0;
+				else {
+					fprintf(stderr, "Invalid EndpointObf%d value (use quic or none)\n", obf_index);
+					ret = false;
+					goto error;
+				}
+			}
+		} else if ((endpoint_index = endpoint_index_from_line(line, &endpoint_value)) > 0) {
 			if (endpoint_index != ctx->expected_endpoint_index + 1) {
 				fprintf(stderr, "Missing Endpoint%d before Endpoint%d\n", ctx->expected_endpoint_index + 1, endpoint_index);
 				ret = false;
@@ -1242,6 +1306,23 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 			argv += 1;
 			argc -= 1;
 		} else if (peer) {
+			int obf_idx = endpoint_obf_index_from_arg(argv[0]);
+			if (obf_idx > 0 && argc >= 2) {
+				if (obf_idx > (int)peer->endpoints_len) {
+					fprintf(stderr, "endpoint_obf%d: configure endpoint%d first\n", obf_idx, obf_idx);
+					goto error;
+				}
+				if (!strcasecmp(argv[1], "quic"))
+					peer->endpoints[obf_idx - 1].obf_type = 1;
+				else if (!strcasecmp(argv[1], "none") || !argv[1][0])
+					peer->endpoints[obf_idx - 1].obf_type = 0;
+				else {
+					fprintf(stderr, "Invalid endpoint_obf value (use quic or none)\n");
+					goto error;
+				}
+				argv += 2;
+				argc -= 2;
+			} else {
 			int endpoint_index = endpoint_index_from_arg(argv[0]);
 			if (endpoint_index > 0 && argc >= 2) {
 				if (endpoint_index != expected_endpoint_index + 1) {
@@ -1312,6 +1393,7 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 			} else {
 				fprintf(stderr, "Invalid argument: %s\n", argv[0]);
 				goto error;
+			}
 			}
 		} else {
 			fprintf(stderr, "Invalid argument: %s\n", argv[0]);

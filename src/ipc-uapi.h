@@ -167,6 +167,8 @@ static int userspace_set_device(struct wgdevice *dev)
 						fprintf(f, "endpoint%zu=[%s]:%s\n", i + 1, host, service);
 					else
 						fprintf(f, "endpoint%zu=%s:%s\n", i + 1, host, service);
+					if (ep->obf_type == 1)
+						fprintf(f, "endpoint_obf%zu=quic\n", i + 1);
 				}
 			}
 		}
