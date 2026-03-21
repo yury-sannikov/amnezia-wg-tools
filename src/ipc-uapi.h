@@ -595,6 +595,15 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 					continue;
 				ep->peer_loss_history[ep->peer_loss_history_len++] = (uint16_t)n;
 			}
+		} else if (peer && endpoint_index_from_key(key, "endpoint_obf") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_obf");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
+			if (!strcmp(value, "quic"))
+				ep->obf_type = 1;
+			else
+				ep->obf_type = 0;
 		} else if (peer && !strcmp(key, "control_endpoint")) {
 			char *begin, *end;
 			struct addrinfo *resolved;

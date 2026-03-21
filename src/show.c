@@ -397,7 +397,10 @@ static void pretty_print(struct wgdevice *device)
 				else
 					terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": %s %s\n", i + 1, direction, data_ep);
 			}
-				terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_GREEN "%s" TERMINAL_RESET "\n", "bwg:high-entropy");
+				if (ep->obf_type == 1)
+				terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": bwg:" TERMINAL_FG_RED "quic" TERMINAL_RESET "\n");
+			else
+				terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_GREEN "bwg:high-entropy" TERMINAL_RESET "\n");
 				terminal_printf("    " TERMINAL_BOLD "state" TERMINAL_RESET ": ");
 				switch (ep->state) {
 				case 1:
