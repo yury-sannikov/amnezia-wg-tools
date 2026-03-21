@@ -284,12 +284,37 @@ static uint16_t loss_history_avg(const uint16_t *history, size_t len)
 	return (uint16_t)((sum + len / 2) / len); /* rounded */
 }
 
+/* wgendpoint.state: 0=dark, 1=green, 2=error (see EndpointState in daemon). */
+#define WG_EP_STATE_GREEN 1u
+
+static bool loss_history_all_zero(const uint16_t *history, size_t len)
+{
+	size_t i;
+
+	for (i = 0; i < len; i++) {
+		if (history[i] != 0)
+			return false;
+	}
+	return len > 0;
+}
+
 /* Print loss line: fixed-width number (4 chars) so TX and RX bars align. Pad to 16 chars total.
- * value_display is the number shown (e.g. average); history is used for the braille bar. */
-static void print_loss_line(const char *label, uint16_t value_display, const uint16_t *history, size_t len)
+ * value_display is the number shown (e.g. average); history is used for the braille bar.
+ * When endpoint is in error and every slot is 0, the daemon often means "no valid loss sample"
+ * (see PacketLossTracker early-exit → accumulateLossBlock(0,0)), not measured 0%% loss — show n/a. */
+static void print_loss_line(const char *label, uint16_t value_display, const uint16_t *history, size_t len, uint32_t ep_state)
 {
 	char braille[4];
 	size_t i;
+	bool no_sample = ep_state != WG_EP_STATE_GREEN && loss_history_all_zero(history, len);
+
+	if (no_sample) {
+		terminal_printf("    " TERMINAL_BOLD "%s" TERMINAL_RESET ": " TERMINAL_FG_YELLOW "n/a" TERMINAL_RESET " (no loss sample)  ", label);
+		for (i = 0; i < WG_LOSS_HISTORY_SIZE; i++)
+			terminal_printf(" ");
+		terminal_printf("\n");
+		return;
+	}
 
 	terminal_printf("    " TERMINAL_BOLD "%s" TERMINAL_RESET ": %4u/1000   ", label, (unsigned int)value_display);
 	for (i = 0; i < len; i++) {
@@ -425,11 +450,11 @@ static void pretty_print(struct wgdevice *device)
 					terminal_printf("    " TERMINAL_BOLD "RTT" TERMINAL_RESET ": %s\n", rtt_str(ep->rtt_nanos));
 				if (ep->loss_history_len > 0) {
 					uint16_t tx_avg = loss_history_avg(ep->loss_history, ep->loss_history_len);
-					print_loss_line("TX loss", tx_avg, ep->loss_history, ep->loss_history_len);
+					print_loss_line("TX loss", tx_avg, ep->loss_history, ep->loss_history_len, ep->state);
 				}
 				if (ep->peer_loss_history_len > 0) {
 					uint16_t rx_avg = loss_history_avg(ep->peer_loss_history, ep->peer_loss_history_len);
-					print_loss_line("RX loss", rx_avg, ep->peer_loss_history, ep->peer_loss_history_len);
+					print_loss_line("RX loss", rx_avg, ep->peer_loss_history, ep->peer_loss_history_len, ep->state);
 				}
 			}
 		}
