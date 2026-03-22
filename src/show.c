@@ -240,13 +240,10 @@ static const char *rtt_str(int64_t rtt_nanos)
 	return buf;
 }
 
-/* Map loss_per_1k (0..1000) to Braille (U+28xx). Unicode: bit0..5 = dot1..dot6 in reading order:
- *   col1   col2
- *   1      4     top row
- *   2      5     middle row
- *   3      6     bottom row
- * Visual steps (good → bad): 6 dots, 5 (no top-right), 4 (no top row), 3 (no top row, drop bottom-right),
- * 2 (bottom row only), 1 (bottom-left only), 0 dots → underscore. Logarithmic scale on 1..6 then 1000+. */
+/* Map loss_per_1k (0..1000) to Braille (U+28xx).
+ * Dot grid:  1 4 / 2 5 / 3 6  (bit masks dot1=0x01 … dot6=0x20).
+ * Levels (good → bad):  6 full; 5 drop top-right; 4 drop top row; 3 empty top, "."/"..";
+ *   2 bottom row only; 1 bottom-left only; loss>=1000 → '_' */
 static void loss_to_braille_utf8(char buf[4], uint16_t loss_per_1k)
 {
 	int level;
@@ -281,8 +278,8 @@ static void loss_to_braille_utf8(char buf[4], uint16_t loss_per_1k)
 		pat = 0x3f & (uint8_t)~(0x01 | 0x08); /* no top row (dots 1,4) */
 		break;
 	case 3:
-		/* no top row; 3 dots: middle row + bottom-left (2,3,5) */
-		pat = 0x02 | 0x04 | 0x10;
+		/* no top row; middle-left + full bottom (dots 2,3,6) */
+		pat = 0x02 | 0x04 | 0x20;
 		break;
 	case 2:
 		pat = 0x04 | 0x20; /* bottom row only (dots 3,6) */
