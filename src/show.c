@@ -240,11 +240,18 @@ static const char *rtt_str(int64_t rtt_nanos)
 	return buf;
 }
 
-/* Map loss_per_1k (0..1000) to braille dots: 0 = full (6 dots), 500+ = 1 dot, 1000 = empty. Logarithmic scale. */
+/* Map loss_per_1k (0..1000) to Braille (U+28xx). Unicode: bit0..5 = dot1..dot6 in reading order:
+ *   col1   col2
+ *   1      4     top row
+ *   2      5     middle row
+ *   3      6     bottom row
+ * Visual steps (good → bad): 6 dots, 5 (no top-right), 4 (no top row), 3 (no top row, drop bottom-right),
+ * 2 (bottom row only), 1 (bottom-left only), 0 dots → underscore. Logarithmic scale on 1..6 then 1000+. */
 static void loss_to_braille_utf8(char buf[4], uint16_t loss_per_1k)
 {
-	int dots;
+	int level;
 	double scaled;
+	uint8_t pat;
 
 	if (loss_per_1k >= 1000) {
 		buf[0] = '_';
@@ -252,19 +259,43 @@ static void loss_to_braille_utf8(char buf[4], uint16_t loss_per_1k)
 		return;
 	}
 	if (loss_per_1k == 0) {
-		dots = 6;
+		level = 6;
 	} else {
-		/* Logarithmic: small loss visible. 500+ -> 1 dot. */
+		/* Logarithmic: small loss visible. 500+ → lower level. */
 		scaled = log10(1.0 + 10.0 * (double)loss_per_1k) / log10(10001.0);
-		dots = 6 - (int)(5.0 * scaled);
-		if (dots < 1)
-			dots = 1;
-		if (dots > 6)
-			dots = 6;
+		level = 6 - (int)(5.0 * scaled);
+		if (level < 1)
+			level = 1;
+		if (level > 6)
+			level = 6;
 	}
-	/* Braille U+2800 + pattern. Dots 1..N = (1<<N)-1. */
+	/* Dot masks: dot1=0x01 dot2=0x02 dot3=0x04 dot4=0x08 dot5=0x10 dot6=0x20 */
+	switch (level) {
+	case 6:
+		pat = 0x3f; /* full cell */
+		break;
+	case 5:
+		pat = 0x3f & (uint8_t)~0x08; /* no top-right (dot 4) */
+		break;
+	case 4:
+		pat = 0x3f & (uint8_t)~(0x01 | 0x08); /* no top row (dots 1,4) */
+		break;
+	case 3:
+		/* no top row; 3 dots: middle row + bottom-left (2,3,5) */
+		pat = 0x02 | 0x04 | 0x10;
+		break;
+	case 2:
+		pat = 0x04 | 0x20; /* bottom row only (dots 3,6) */
+		break;
+	case 1:
+		pat = 0x04; /* bottom-left only (dot 3) */
+		break;
+	default:
+		pat = 0x04;
+		break;
+	}
 	{
-		uint32_t codepoint = 0x2800 + ((1 << dots) - 1);
+		uint32_t codepoint = 0x2800 + (uint32_t)pat;
 		buf[0] = (char)(0xE0 | (codepoint >> 12));
 		buf[1] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
 		buf[2] = (char)(0x80 | (codepoint & 0x3F));
