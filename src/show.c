@@ -329,7 +329,10 @@ static bool loss_history_all_zero(const uint16_t *history, size_t len)
 /* Print loss line: fixed-width number (4 chars) so TX and RX bars align. Pad to 16 chars total.
  * value_display is the number shown (e.g. average); history is used for the braille bar.
  * When endpoint is in error and every slot is 0, the daemon often means "no valid loss sample"
- * (see PacketLossTracker early-exit → accumulateLossBlock(0,0)), not measured 0%% loss — show n/a. */
+ * (see PacketLossTracker early-exit → accumulateLossBlock(0,0)), not measured 0%% loss — show n/a.
+ * Bars plot each minute in the ring (up to 16), oldest→newest left→right. The headline is the
+ * daemon’s average over the last ~5 minutes only — it can read 0/1000 while an older minute in
+ * the ring still shows partial bars; conversely a bad minute scrolls out after ~16 minutes. */
 static void print_loss_line(const char *label, uint16_t value_display, const uint16_t *history, size_t len, uint32_t ep_state)
 {
 	char braille[4];
@@ -357,7 +360,7 @@ static void print_loss_line(const char *label, uint16_t value_display, const uin
 static const char *COMMAND_NAME;
 static void show_usage(void)
 {
-	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | endpoint-strategy | control-endpoints | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | probe | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5]\n", PROG_NAME, COMMAND_NAME);
+	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | endpoint-strategy | selected-endpoint-indices | control-endpoints | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | probe | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5]\n", PROG_NAME, COMMAND_NAME);
 }
 
 static void pretty_print(struct wgdevice *device)
@@ -444,11 +447,35 @@ static void pretty_print(struct wgdevice *device)
 				strncpy(data_ep, endpoint((struct sockaddr *)&ep->addr), sizeof(data_ep) - 1);
 				data_ep[sizeof(data_ep) - 1] = '\0';
 			{
-				const char *direction = ep->is_initiator ? "->" : "<-";
-				if (ep->bind_port)
-					terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": %s %s (bind %u)\n", i + 1, direction, data_ep, ep->bind_port);
-				else
-					terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": %s %s\n", i + 1, direction, data_ep);
+				if (ep->tx_rank > 0) {
+					/* Initiator + TX: outbound arrow; responder + TX: bidirectional (<->). */
+					if (ep->is_initiator) {
+						if (ep->bind_port)
+							terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": "
+								TERMINAL_FG_CYAN "->" TERMINAL_RESET " %s (bind %u)\n",
+								i + 1, data_ep, ep->bind_port);
+						else
+							terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": "
+								TERMINAL_FG_CYAN "->" TERMINAL_RESET " %s\n",
+								i + 1, data_ep);
+					} else {
+						if (ep->bind_port)
+							terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": "
+								TERMINAL_FG_CYAN "<->" TERMINAL_RESET " %s (bind %u)\n",
+								i + 1, data_ep, ep->bind_port);
+						else
+							terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": "
+								TERMINAL_FG_CYAN "<->" TERMINAL_RESET " %s\n",
+								i + 1, data_ep);
+					}
+				} else {
+					const char *direction = ep->is_initiator ? "->" : "<-";
+
+					if (ep->bind_port)
+						terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": %s %s (bind %u)\n", i + 1, direction, data_ep, ep->bind_port);
+					else
+						terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": %s %s\n", i + 1, direction, data_ep);
+				}
 			}
 				if (ep->obf_type == 1) {
 					if (ep->obf_sni[0]) {
@@ -743,6 +770,13 @@ static bool ugly_print(struct wgdevice *device, const char *param, bool with_int
 				printf("%s\t", device->name);
 			printf("%s\t", key(peer->public_key));
 			printf("%s\n", (peer->flags & WGPEER_HAS_ENDPOINT_STRATEGY && peer->endpoint_strategy) ? peer->endpoint_strategy : "(none)");
+		}
+	} else if (!strcmp(param, "selected-endpoint-indices")) {
+		for_each_wgpeer(device, peer) {
+			if (with_interface)
+				printf("%s\t", device->name);
+			printf("%s\t", key(peer->public_key));
+			printf("%s\n", (peer->selected_endpoint_indices && peer->selected_endpoint_indices[0]) ? peer->selected_endpoint_indices : "(none)");
 		}
 	} else if (!strcmp(param, "control-endpoints")) {
 		for_each_wgpeer(device, peer) {

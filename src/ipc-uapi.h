@@ -432,6 +432,13 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 				goto err;
 			}
 			peer->flags |= WGPEER_HAS_ENDPOINT_STRATEGY;
+		} else if (peer && !strcmp(key, "selected_endpoint_indices")) {
+			free(peer->selected_endpoint_indices);
+			peer->selected_endpoint_indices = strdup(value);
+			if (!peer->selected_endpoint_indices) {
+				ret = -ENOMEM;
+				goto err;
+			}
 		} else if (peer && endpoint_index_from_key(key, "endpoint") > 0) {
 			int endpoint_index = endpoint_index_from_key(key, "endpoint");
 			char *begin, *end;

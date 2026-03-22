@@ -112,6 +112,7 @@ struct wgpeer {
 	size_t endpoints_cap;
 
 	char *endpoint_strategy;
+	char *selected_endpoint_indices; /* from UAPI GET; comma-separated 1-based indices */
 
 	struct wgallowedip *first_allowedip, *last_allowedip;
 	struct wgpeer *next_peer;
@@ -188,6 +189,7 @@ static inline void free_wgdevice(struct wgdevice *dev)
 			free(allowedip);
 		free(peer->endpoints);
 		free(peer->endpoint_strategy);
+		free(peer->selected_endpoint_indices);
 		free(peer);
 	}
 
