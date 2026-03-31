@@ -912,6 +912,18 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 			ret = parse_awg_string(&ctx->device->i5, "I5", value);
 			if (ret)
 				ctx->device->flags |= WGDEVICE_HAS_I5;
+		} else if (key_match("DnsZone")) {
+			ret = parse_awg_string(&ctx->device->dns_zone, "DnsZone", value);
+			if (ret)
+				ctx->device->flags |= WGDEVICE_HAS_DNS_ZONE;
+		} else if (key_match("DnsZoneNS")) {
+			ret = parse_awg_string(&ctx->device->dns_zone_ns, "DnsZoneNS", value);
+			if (ret)
+				ctx->device->flags |= WGDEVICE_HAS_DNS_ZONE_NS;
+		} else if (key_match("DnsNsIP")) {
+			ret = parse_awg_string(&ctx->device->dns_ns_ip, "DnsNsIP", value);
+			if (ret)
+				ctx->device->flags |= WGDEVICE_HAS_DNS_NS_IP;
 		} else {
 			goto error;
 		}

@@ -345,7 +345,7 @@ static void print_loss_line(const char *label, uint16_t value_display, const uin
 static const char *COMMAND_NAME;
 static void show_usage(void)
 {
-	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | endpoint-strategy | selected-endpoint-indices | control-endpoints | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | probe | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5]\n", PROG_NAME, COMMAND_NAME);
+	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | endpoint-strategy | selected-endpoint-indices | control-endpoints | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | probe | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5 | dns-zone | dns-zone-ns | dns-ns-ip]\n", PROG_NAME, COMMAND_NAME);
 }
 
 static void pretty_print(struct wgdevice *device)
@@ -398,6 +398,12 @@ static void pretty_print(struct wgdevice *device)
 		terminal_printf("  " TERMINAL_BOLD "i4" TERMINAL_RESET ": %s\n", device->i4);
 	if (device->i5)
 		terminal_printf("  " TERMINAL_BOLD "i5" TERMINAL_RESET ": %s\n", device->i5);
+	if (device->dns_zone || device->dns_zone_ns) {
+		terminal_printf("  " TERMINAL_BOLD "dns zone" TERMINAL_RESET ": %s\n", device->dns_zone ? device->dns_zone : "(none)");
+		terminal_printf("  " TERMINAL_BOLD "dns zone ns" TERMINAL_RESET ": %s\n", device->dns_zone_ns ? device->dns_zone_ns : "(none)");
+		if (device->dns_ns_ip)
+			terminal_printf("  " TERMINAL_BOLD "dns ns ip" TERMINAL_RESET ": %s\n", device->dns_ns_ip);
+	}
 
 	if (device->first_peer) {
 		sort_peers(device);
@@ -840,7 +846,19 @@ static bool ugly_print(struct wgdevice *device, const char *param, bool with_int
 		}
 	} else if (!strcmp(param, "dump"))
 		dump_print(device, with_interface);
-	else {
+	else if (!strcmp(param, "dns-zone")) {
+		if (with_interface)
+			printf("%s\t", device->name);
+		printf("%s\n", device->dns_zone ? device->dns_zone : "(none)");
+	} else if (!strcmp(param, "dns-zone-ns")) {
+		if (with_interface)
+			printf("%s\t", device->name);
+		printf("%s\n", device->dns_zone_ns ? device->dns_zone_ns : "(none)");
+	} else if (!strcmp(param, "dns-ns-ip")) {
+		if (with_interface)
+			printf("%s\t", device->name);
+		printf("%s\n", device->dns_ns_ip ? device->dns_ns_ip : "(none)");
+	} else {
 		fprintf(stderr, "Invalid parameter: `%s'\n", param);
 		show_usage();
 		return false;

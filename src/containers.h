@@ -140,7 +140,10 @@ enum {
 	WGDEVICE_HAS_I3 = 1U << 18,
 	WGDEVICE_HAS_I4 = 1U << 19,
 	WGDEVICE_HAS_I5 = 1U << 20,
-	WGDEVICE_HAS_DATA_PORT = 1U << 21
+	WGDEVICE_HAS_DATA_PORT = 1U << 21,
+	WGDEVICE_HAS_DNS_ZONE = 1U << 22,
+	WGDEVICE_HAS_DNS_ZONE_NS = 1U << 23,
+	WGDEVICE_HAS_DNS_NS_IP = 1U << 24
 };
 
 struct wgdevice {
@@ -175,6 +178,10 @@ struct wgdevice {
 	char*    i3;
 	char*    i4;
 	char*    i5;
+
+	char*    dns_zone;    /* delegated zone apex, e.g. "t1.vinchi.xyz" */
+	char*    dns_zone_ns; /* NS target hostname, e.g. "t1ns.vinchi.xyz" */
+	char*    dns_ns_ip;   /* optional glue A record IP, e.g. "94.158.219.12" */
 };
 
 #define for_each_wgpeer(__dev, __peer) for ((__peer) = (__dev)->first_peer; (__peer); (__peer) = (__peer)->next_peer)
@@ -203,6 +210,9 @@ static inline void free_wgdevice(struct wgdevice *dev)
 	free(dev->i4);
 	free(dev->i5);
 	free(dev->listen_data_ports);
+	free(dev->dns_zone);
+	free(dev->dns_zone_ns);
+	free(dev->dns_ns_ip);
 
 	free(dev);
 }

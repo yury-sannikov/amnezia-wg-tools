@@ -131,6 +131,13 @@ static int userspace_set_device(struct wgdevice *dev)
 	if (dev->flags & WGDEVICE_HAS_I5)
 		fprintf(f, "i5=%s\n", dev->i5);
 
+	if (dev->flags & WGDEVICE_HAS_DNS_ZONE && dev->dns_zone)
+		fprintf(f, "dns_zone=%s\n", dev->dns_zone);
+	if (dev->flags & WGDEVICE_HAS_DNS_ZONE_NS && dev->dns_zone_ns)
+		fprintf(f, "dns_zone_ns=%s\n", dev->dns_zone_ns);
+	if (dev->flags & WGDEVICE_HAS_DNS_NS_IP && dev->dns_ns_ip)
+		fprintf(f, "dns_ns_ip=%s\n", dev->dns_ns_ip);
+
 	for_each_wgpeer(dev, peer) {
 		key_to_hex(hex, peer->public_key);
 		fprintf(f, "public_key=%s\n", hex);
@@ -404,6 +411,27 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			}
 
 			dev->flags |= WGDEVICE_HAS_I5;
+		} else if (!peer && !strcmp(key, "dns_zone")) {
+			dev->dns_zone = strdup(value);
+			if (!dev->dns_zone) {
+				ret = -ENOMEM;
+				goto err;
+			}
+			dev->flags |= WGDEVICE_HAS_DNS_ZONE;
+		} else if (!peer && !strcmp(key, "dns_zone_ns")) {
+			dev->dns_zone_ns = strdup(value);
+			if (!dev->dns_zone_ns) {
+				ret = -ENOMEM;
+				goto err;
+			}
+			dev->flags |= WGDEVICE_HAS_DNS_ZONE_NS;
+		} else if (!peer && !strcmp(key, "dns_ns_ip")) {
+			dev->dns_ns_ip = strdup(value);
+			if (!dev->dns_ns_ip) {
+				ret = -ENOMEM;
+				goto err;
+			}
+			dev->flags |= WGDEVICE_HAS_DNS_NS_IP;
 		} else if (!strcmp(key, "public_key")) {
 			struct wgpeer *new_peer = calloc(1, sizeof(*new_peer));
 

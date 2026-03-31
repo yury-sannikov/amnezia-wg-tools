@@ -80,6 +80,12 @@ int showconf_main(int argc, const char *argv[])
 		printf("I4 = %s\n", device->i4);
 	if (device->flags & WGDEVICE_HAS_I5)
 		printf("I5 = %s\n", device->i5);
+	if (device->flags & WGDEVICE_HAS_DNS_ZONE)
+		printf("DnsZone = %s\n", device->dns_zone);
+	if (device->flags & WGDEVICE_HAS_DNS_ZONE_NS)
+		printf("DnsZoneNS = %s\n", device->dns_zone_ns);
+	if (device->flags & WGDEVICE_HAS_DNS_NS_IP)
+		printf("DnsNsIP = %s\n", device->dns_ns_ip);
 
 	printf("\n");
 	for_each_wgpeer(device, peer) {
