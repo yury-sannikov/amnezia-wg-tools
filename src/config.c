@@ -979,6 +979,10 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 			ret = parse_endpoint(&ctx->last_peer->control_endpoint.addr, value, NULL);
 			if (ret)
 				ctx->last_peer->flags |= WGPEER_HAS_CONTROL_ENDPOINT;
+		} else if (key_match("ControlRelay")) {
+			ret = parse_awg_string(&ctx->last_peer->control_relay, "ControlRelay", value);
+			if (ret)
+				ctx->last_peer->flags |= WGPEER_HAS_CONTROL_RELAY;
 		} else if (key_match("EndpointStrategy")) {
 			ret = parse_awg_string(&ctx->last_peer->endpoint_strategy, "EndpointStrategy", value);
 			if (ret)

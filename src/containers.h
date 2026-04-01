@@ -76,7 +76,8 @@ enum {
 	WGPEER_HAS_AWG = 1U << 5,
 	WGPEER_HAS_CONTROL_ENDPOINT = 1U << 6,
 	WGPEER_HAS_ENDPOINT_STRATEGY = 1U << 7,
-	WGPEER_HAS_PROBE = 1U << 8
+	WGPEER_HAS_PROBE = 1U << 8,
+	WGPEER_HAS_CONTROL_RELAY = 1U << 9
 };
 
 struct wgpeer {
@@ -113,6 +114,9 @@ struct wgpeer {
 
 	char *endpoint_strategy;
 	char *selected_endpoint_indices; /* from UAPI GET; comma-separated 1-based indices */
+
+	char *control_relay;        /* comma-separated relay IPs (e.g. "8.8.8.8,1.1.1.1") */
+	char *control_relay_active; /* currently active relay IP (runtime, read-only) */
 
 	struct wgallowedip *first_allowedip, *last_allowedip;
 	struct wgpeer *next_peer;
@@ -197,6 +201,8 @@ static inline void free_wgdevice(struct wgdevice *dev)
 		free(peer->endpoints);
 		free(peer->endpoint_strategy);
 		free(peer->selected_endpoint_indices);
+		free(peer->control_relay);
+		free(peer->control_relay_active);
 		free(peer);
 	}
 

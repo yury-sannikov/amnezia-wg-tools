@@ -135,6 +135,9 @@ int showconf_main(int argc, const char *argv[])
 					printf("ControlEndpoint = %s:%s\n", ctrl_host, ctrl_service);
 			}
 		}
+		/* Output control relay (mutually exclusive with ControlEndpoint) */
+		if ((peer->flags & WGPEER_HAS_CONTROL_RELAY) && peer->control_relay)
+			printf("ControlRelay = %s\n", peer->control_relay);
 		if (peer->flags & WGPEER_HAS_ENDPOINT_STRATEGY && peer->endpoint_strategy)
 			printf("EndpointStrategy = %s\n", peer->endpoint_strategy);
 

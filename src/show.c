@@ -345,7 +345,7 @@ static void print_loss_line(const char *label, uint16_t value_display, const uin
 static const char *COMMAND_NAME;
 static void show_usage(void)
 {
-	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | endpoint-strategy | selected-endpoint-indices | control-endpoints | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | probe | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5 | dns-zone | dns-zone-ns | dns-ns-ip]\n", PROG_NAME, COMMAND_NAME);
+	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | endpoint-strategy | selected-endpoint-indices | control-endpoints | control-relay | control-relay-active | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | probe | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5 | dns-zone | dns-zone-ns | dns-ns-ip]\n", PROG_NAME, COMMAND_NAME);
 }
 
 static void pretty_print(struct wgdevice *device)
@@ -418,8 +418,15 @@ static void pretty_print(struct wgdevice *device)
 			char ctrl_ep[4096 + 512 + 4];
 			strncpy(ctrl_ep, endpoint(&peer->control_endpoint.addr), sizeof(ctrl_ep) - 1);
 			ctrl_ep[sizeof(ctrl_ep) - 1] = '\0';
-			terminal_printf("  " TERMINAL_BOLD "control" TERMINAL_RESET ": %s\n", ctrl_ep);
-			terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", "dns");
+			if (peer->flags & WGPEER_HAS_CONTROL_RELAY && peer->control_relay) {
+				terminal_printf("  " TERMINAL_BOLD "control relay" TERMINAL_RESET ": %s\n", peer->control_relay);
+				terminal_printf("    " TERMINAL_BOLD "active" TERMINAL_RESET ": %s\n",
+					peer->control_relay_active ? peer->control_relay_active : ctrl_ep);
+				terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", "dns-relay");
+			} else {
+				terminal_printf("  " TERMINAL_BOLD "control" TERMINAL_RESET ": %s\n", ctrl_ep);
+				terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", "dns");
+			}
 
 			if (peer->last_handshake_time.tv_sec)
     			terminal_printf("    " TERMINAL_BOLD "latest handshake" TERMINAL_RESET ": %s\n", ago(&peer->last_handshake_time));
@@ -858,6 +865,20 @@ static bool ugly_print(struct wgdevice *device, const char *param, bool with_int
 		if (with_interface)
 			printf("%s\t", device->name);
 		printf("%s\n", device->dns_ns_ip ? device->dns_ns_ip : "(none)");
+	} else if (!strcmp(param, "control-relay")) {
+		for_each_wgpeer(device, peer) {
+			if (with_interface)
+				printf("%s\t", device->name);
+			printf("%s\t%s\n", key(peer->public_key),
+				(peer->flags & WGPEER_HAS_CONTROL_RELAY && peer->control_relay) ? peer->control_relay : "(none)");
+		}
+	} else if (!strcmp(param, "control-relay-active")) {
+		for_each_wgpeer(device, peer) {
+			if (with_interface)
+				printf("%s\t", device->name);
+			printf("%s\t%s\n", key(peer->public_key),
+				peer->control_relay_active ? peer->control_relay_active : "(none)");
+		}
 	} else {
 		fprintf(stderr, "Invalid parameter: `%s'\n", param);
 		show_usage();
