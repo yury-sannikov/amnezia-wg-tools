@@ -413,28 +413,34 @@ static void pretty_print(struct wgdevice *device)
 		terminal_printf(TERMINAL_FG_YELLOW TERMINAL_BOLD "peer" TERMINAL_RESET ": " TERMINAL_FG_YELLOW "%s" TERMINAL_RESET "\n", key(peer->public_key));
 		if (peer->flags & WGPEER_HAS_PRESHARED_KEY)
 			terminal_printf("  " TERMINAL_BOLD "preshared key" TERMINAL_RESET ": %s\n", masked_key(peer->preshared_key));
-		if ((peer->flags & WGPEER_HAS_CONTROL_ENDPOINT) &&
+
+		/* Control section: relay mode or direct mode */
+		if (peer->flags & WGPEER_HAS_CONTROL_RELAY && peer->control_relay) {
+			terminal_printf("  " TERMINAL_BOLD "control relay" TERMINAL_RESET ": %s\n", peer->control_relay);
+			terminal_printf("    " TERMINAL_BOLD "active" TERMINAL_RESET ": %s\n",
+				peer->control_relay_active ? peer->control_relay_active : "(unknown)");
+			terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", "dns-relay");
+			if (peer->last_handshake_time.tv_sec)
+				terminal_printf("    " TERMINAL_BOLD "latest handshake" TERMINAL_RESET ": %s\n", ago(&peer->last_handshake_time));
+			if (peer->control_rx_bytes || peer->control_tx_bytes) {
+				terminal_printf("    " TERMINAL_BOLD "transfer" TERMINAL_RESET ": ");
+				terminal_printf("%s received, ", bytes(peer->control_rx_bytes));
+				terminal_printf("%s sent\n", bytes(peer->control_tx_bytes));
+			}
+		} else if ((peer->flags & WGPEER_HAS_CONTROL_ENDPOINT) &&
 		    (peer->control_endpoint.addr.sa_family == AF_INET || peer->control_endpoint.addr.sa_family == AF_INET6)) {
 			char ctrl_ep[4096 + 512 + 4];
 			strncpy(ctrl_ep, endpoint(&peer->control_endpoint.addr), sizeof(ctrl_ep) - 1);
 			ctrl_ep[sizeof(ctrl_ep) - 1] = '\0';
-			if (peer->flags & WGPEER_HAS_CONTROL_RELAY && peer->control_relay) {
-				terminal_printf("  " TERMINAL_BOLD "control relay" TERMINAL_RESET ": %s\n", peer->control_relay);
-				terminal_printf("    " TERMINAL_BOLD "active" TERMINAL_RESET ": %s\n",
-					peer->control_relay_active ? peer->control_relay_active : ctrl_ep);
-				terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", "dns-relay");
-			} else {
-				terminal_printf("  " TERMINAL_BOLD "control" TERMINAL_RESET ": %s\n", ctrl_ep);
-				terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", "dns");
-			}
-
+			terminal_printf("  " TERMINAL_BOLD "control" TERMINAL_RESET ": %s\n", ctrl_ep);
+			terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", "dns");
 			if (peer->last_handshake_time.tv_sec)
-    			terminal_printf("    " TERMINAL_BOLD "latest handshake" TERMINAL_RESET ": %s\n", ago(&peer->last_handshake_time));
-	     	if (peer->control_rx_bytes || peer->control_tx_bytes) {
-			    terminal_printf("    " TERMINAL_BOLD "transfer" TERMINAL_RESET ": ");
-			    terminal_printf("%s received, ", bytes(peer->control_rx_bytes));
-			    terminal_printf("%s sent\n", bytes(peer->control_tx_bytes));
-		    }
+				terminal_printf("    " TERMINAL_BOLD "latest handshake" TERMINAL_RESET ": %s\n", ago(&peer->last_handshake_time));
+			if (peer->control_rx_bytes || peer->control_tx_bytes) {
+				terminal_printf("    " TERMINAL_BOLD "transfer" TERMINAL_RESET ": ");
+				terminal_printf("%s received, ", bytes(peer->control_rx_bytes));
+				terminal_printf("%s sent\n", bytes(peer->control_tx_bytes));
+			}
 		}
 		if (peer->flags & WGPEER_HAS_ENDPOINT_STRATEGY && peer->endpoint_strategy)
 			terminal_printf("  " TERMINAL_BOLD "endpoint strategy" TERMINAL_RESET ": %s\n", peer->endpoint_strategy);
