@@ -552,11 +552,15 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			if (!ep)
 				break;
 			if (!strcmp(value, "dark"))
-				ep->state = 0;
+				ep->state = WG_EP_STATE_DARK;
 			else if (!strcmp(value, "green"))
-				ep->state = 1;
+				ep->state = WG_EP_STATE_GREEN;
 			else if (!strcmp(value, "error"))
-				ep->state = 2;
+				ep->state = WG_EP_STATE_ERROR;
+			else if (!strcmp(value, "blue"))
+				ep->state = WG_EP_STATE_BLUE;
+			else if (!strcmp(value, "orange"))
+				ep->state = WG_EP_STATE_ORANGE;
 		} else if (peer && endpoint_index_from_key(key, "endpoint_is_initiator") > 0) {
 			int endpoint_index = endpoint_index_from_key(key, "endpoint_is_initiator");
 			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);

@@ -62,8 +62,10 @@ static const char *endpoint_str(const struct sockaddr *addr)
 static const char *state_str(uint32_t state)
 {
 	switch (state) {
-	case 1: return "green";
-	case 2: return "error";
+	case WG_EP_STATE_GREEN: return "green";
+	case WG_EP_STATE_ERROR: return "error";
+	case WG_EP_STATE_BLUE: return "blue";
+	case WG_EP_STATE_ORANGE: return "orange";
 	default: return "dark";
 	}
 }

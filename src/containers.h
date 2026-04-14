@@ -68,6 +68,14 @@ struct wgendpoint {
 };
 
 enum {
+	WG_EP_STATE_DARK = 0,
+	WG_EP_STATE_GREEN = 1,
+	WG_EP_STATE_ERROR = 2,
+	WG_EP_STATE_BLUE = 3,
+	WG_EP_STATE_ORANGE = 4
+};
+
+enum {
 	WGPEER_REMOVE_ME = 1U << 0,
 	WGPEER_REPLACE_ALLOWEDIPS = 1U << 1,
 	WGPEER_HAS_PUBLIC_KEY = 1U << 2,

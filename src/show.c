@@ -134,10 +134,14 @@ static char *endpoint(const struct sockaddr *addr)
 static const char *endpoint_state_string(uint32_t state)
 {
 	switch (state) {
-	case 1:
+	case WG_EP_STATE_GREEN:
 		return "green";
-	case 2:
+	case WG_EP_STATE_ERROR:
 		return "error";
+	case WG_EP_STATE_BLUE:
+		return "blue";
+	case WG_EP_STATE_ORANGE:
+		return "orange";
 	default:
 		return "dark";
 	}
@@ -492,11 +496,17 @@ static void pretty_print(struct wgdevice *device)
 				}
 				terminal_printf("    " TERMINAL_BOLD "state" TERMINAL_RESET ": ");
 				switch (ep->state) {
-				case 1:
+				case WG_EP_STATE_GREEN:
 					terminal_printf(TERMINAL_FG_GREEN "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
 					break;
-				case 2:
+				case WG_EP_STATE_ERROR:
 					terminal_printf(TERMINAL_FG_RED "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
+					break;
+				case WG_EP_STATE_BLUE:
+					terminal_printf(TERMINAL_FG_BLUE "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
+					break;
+				case WG_EP_STATE_ORANGE:
+					terminal_printf(TERMINAL_FG_YELLOW "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
 					break;
 				default:
 					terminal_printf(TERMINAL_FG_GRAY "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
