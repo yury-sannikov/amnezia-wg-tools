@@ -91,6 +91,9 @@ add_if() {
 		ret=$?
 		! command -v "${WG_QUICK_USERSPACE_IMPLEMENTATION:-amneziabwg-go}" >/dev/null && exit $ret
 		echo "[!] Using userspace implementation (amneziabwg-go)." >&2
+		# ugly fix to prevent heap growth on traffic bursts
+		export GOMEMLIMIT=200MiB
+		export GOGC=50
 		cmd "${WG_QUICK_USERSPACE_IMPLEMENTATION:-amneziabwg-go}" "$INTERFACE"
 	fi
 }
