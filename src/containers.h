@@ -125,6 +125,7 @@ struct wgpeer {
 
 	char *control_relay;        /* comma-separated relay IPs (e.g. "8.8.8.8,1.1.1.1") */
 	char *control_relay_active; /* currently active relay IP (runtime, read-only) */
+	uint64_t direct_recoveries; /* count of successful direct fallback recoveries (runtime, read-only) */
 
 	struct wgallowedip *first_allowedip, *last_allowedip;
 	struct wgpeer *next_peer;

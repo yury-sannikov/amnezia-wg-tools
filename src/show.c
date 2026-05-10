@@ -349,7 +349,7 @@ static void print_loss_line(const char *label, uint16_t value_display, const uin
 static const char *COMMAND_NAME;
 static void show_usage(void)
 {
-	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | endpoint-strategy | selected-endpoint-indices | control-endpoints | control-relay | control-relay-active | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | probe | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5 | dns-zone | dns-zone-ns | dns-ns-ip]\n", PROG_NAME, COMMAND_NAME);
+	fprintf(stderr, "Usage: %s %s { <interface> | all | interfaces } [public-key | private-key | listen-control-port | listen-data-ports | fwmark | peers | preshared-keys | endpoints | endpoint-stats | endpoint-strategy | selected-endpoint-indices | control-endpoints | control-relay | control-relay-active | direct-recoveries | allowed-ips | latest-handshakes | transfer | control-transfer | persistent-keepalive | probe | dump | jc | jmin | jmax | s1 | s2 | s3 | s4 | h1 | h2 | h3 | h4 | i1 | i2 | i3 | i4 | i5 | dns-zone | dns-zone-ns | dns-ns-ip]\n", PROG_NAME, COMMAND_NAME);
 }
 
 static void pretty_print(struct wgdevice *device)
@@ -418,11 +418,13 @@ static void pretty_print(struct wgdevice *device)
 		if (peer->flags & WGPEER_HAS_PRESHARED_KEY)
 			terminal_printf("  " TERMINAL_BOLD "preshared key" TERMINAL_RESET ": %s\n", masked_key(peer->preshared_key));
 
-		/* Control section: relay mode or direct mode */
+		/* Control section: relay and direct fallback can coexist. */
 		if (peer->flags & WGPEER_HAS_CONTROL_RELAY && peer->control_relay) {
 			terminal_printf("  " TERMINAL_BOLD "control relay" TERMINAL_RESET ": %s\n", peer->control_relay);
 			terminal_printf("    " TERMINAL_BOLD "active" TERMINAL_RESET ": %s\n",
 				peer->control_relay_active ? peer->control_relay_active : "(unknown)");
+			terminal_printf("    " TERMINAL_BOLD "direct recoveries" TERMINAL_RESET ": %" PRIu64 "\n",
+				(uint64_t)peer->direct_recoveries);
 			terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", "dns-relay");
 			if (peer->last_handshake_time.tv_sec)
 				terminal_printf("    " TERMINAL_BOLD "latest handshake" TERMINAL_RESET ": %s\n", ago(&peer->last_handshake_time));
@@ -431,13 +433,15 @@ static void pretty_print(struct wgdevice *device)
 				terminal_printf("%s received, ", bytes(peer->control_rx_bytes));
 				terminal_printf("%s sent\n", bytes(peer->control_tx_bytes));
 			}
-		} else if ((peer->flags & WGPEER_HAS_CONTROL_ENDPOINT) &&
+		}
+		if ((peer->flags & WGPEER_HAS_CONTROL_ENDPOINT) &&
 		    (peer->control_endpoint.addr.sa_family == AF_INET || peer->control_endpoint.addr.sa_family == AF_INET6)) {
 			char ctrl_ep[4096 + 512 + 4];
 			strncpy(ctrl_ep, endpoint(&peer->control_endpoint.addr), sizeof(ctrl_ep) - 1);
 			ctrl_ep[sizeof(ctrl_ep) - 1] = '\0';
-			terminal_printf("  " TERMINAL_BOLD "control" TERMINAL_RESET ": %s\n", ctrl_ep);
-			terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n", "dns");
+			terminal_printf("  " TERMINAL_BOLD "control endpoint" TERMINAL_RESET ": %s\n", ctrl_ep);
+			terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_RED "%s" TERMINAL_RESET "\n",
+				(peer->flags & WGPEER_HAS_CONTROL_RELAY && peer->control_relay) ? "dns-fallback" : "dns");
 			if (peer->last_handshake_time.tv_sec)
 				terminal_printf("    " TERMINAL_BOLD "latest handshake" TERMINAL_RESET ": %s\n", ago(&peer->last_handshake_time));
 			if (peer->control_rx_bytes || peer->control_tx_bytes) {
@@ -894,6 +898,12 @@ static bool ugly_print(struct wgdevice *device, const char *param, bool with_int
 				printf("%s\t", device->name);
 			printf("%s\t%s\n", key(peer->public_key),
 				peer->control_relay_active ? peer->control_relay_active : "(none)");
+		}
+	} else if (!strcmp(param, "direct-recoveries")) {
+		for_each_wgpeer(device, peer) {
+			if (with_interface)
+				printf("%s\t", device->name);
+			printf("%s\t%" PRIu64 "\n", key(peer->public_key), (uint64_t)peer->direct_recoveries);
 		}
 	} else {
 		fprintf(stderr, "Invalid parameter: `%s'\n", param);

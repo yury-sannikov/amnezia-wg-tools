@@ -200,7 +200,7 @@ static int userspace_set_device(struct wgdevice *dev)
 					fprintf(f, "control_endpoint=%s:%s\n", ctrl_host, ctrl_service);
 			}
 		}
-		/* Output control relay (mutually exclusive with control_endpoint) */
+		/* Output control relay (can coexist with control_endpoint). */
 		if ((peer->flags & WGPEER_HAS_CONTROL_RELAY) && peer->control_relay)
 			fprintf(f, "control_relay=%s\n", peer->control_relay);
 		if (peer->flags & WGPEER_HAS_PERSISTENT_KEEPALIVE_INTERVAL)
@@ -711,7 +711,9 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 				ret = -ENOMEM;
 				goto err;
 			}
-		} else if (peer && !strcmp(key, "probe")) {
+		} else if (peer && !strcmp(key, "direct_recoveries"))
+			peer->direct_recoveries = NUM(0xffffffffffffffffULL);
+		else if (peer && !strcmp(key, "probe")) {
 			char *colon = strchr(value, ':');
 			unsigned long timeout_val;
 			long num_tests_val;
