@@ -170,6 +170,8 @@ int showconf_main(int argc, const char *argv[])
 						else
 							printf("EndpointObf%zu = quic\n", i + 1);
 					}
+					if (ep->has_weight && ep->weight != WG_WEIGHT_DEFAULT)
+						printf("EndpointWeight%zu = %.4f\n", i + 1, ep->weight);
 				}
 			}
 		}

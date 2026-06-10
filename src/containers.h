@@ -46,6 +46,10 @@ struct wgallowedip {
 
 #define WG_LOSS_HISTORY_SIZE 16
 
+#define WG_WEIGHT_DEFAULT 1.0
+#define WG_WEIGHT_FLOOR   0.1
+#define WG_WEIGHT_MAX     10.0
+
 struct wgendpoint {
 	struct sockaddr_storage addr;
 	uint32_t state;
@@ -65,6 +69,8 @@ struct wgendpoint {
 	uint16_t avg_loss; /* average loss per 1000 (from UAPI endpoint_avg_loss) */
 	uint8_t obf_type;  /* 0 = none (default bwg:high-entropy), 1 = quic */
 	char obf_sni[256]; /* pinned SNI for quic obfuscation; empty = random decoy */
+	double weight;     /* selection bias (default 1.0); from UAPI endpoint_weightN */
+	bool has_weight;   /* true once endpoint_weightN received from GET or set locally */
 };
 
 enum {

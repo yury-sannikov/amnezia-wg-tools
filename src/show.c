@@ -244,6 +244,99 @@ static const char *rtt_str(int64_t rtt_nanos)
 	return buf;
 }
 
+static double effective_weight(double w)
+{
+	if (w < WG_WEIGHT_FLOOR)
+		return WG_WEIGHT_FLOOR;
+	return w;
+}
+
+static bool endpoint_in_selected_set(size_t endpoint_index, const char *selected_indices)
+{
+	char *copy, *val, *tok;
+
+	if (!selected_indices || !selected_indices[0])
+		return false;
+	copy = strdup(selected_indices);
+	if (!copy)
+		return false;
+	val = copy;
+	while ((tok = strsep(&val, ",")) != NULL) {
+		char *end;
+		unsigned long idx;
+
+		while (*tok == ' ' || *tok == '\t')
+			tok++;
+		if (!*tok)
+			continue;
+		idx = strtoul(tok, &end, 10);
+		if (*end == '\0' && idx == endpoint_index) {
+			free(copy);
+			return true;
+		}
+	}
+	free(copy);
+	return false;
+}
+
+static double selected_weight_sum(const struct wgpeer *peer, const char *selected_indices)
+{
+	char *copy, *val, *tok;
+	double sum = 0;
+
+	if (!peer || !selected_indices || !selected_indices[0])
+		return 0;
+	copy = strdup(selected_indices);
+	if (!copy)
+		return 0;
+	val = copy;
+	while ((tok = strsep(&val, ",")) != NULL) {
+		char *end;
+		unsigned long idx;
+
+		while (*tok == ' ' || *tok == '\t')
+			tok++;
+		if (!*tok)
+			continue;
+		idx = strtoul(tok, &end, 10);
+		if (*end != '\0' || idx == 0 || idx > peer->endpoints_len)
+			continue;
+		sum += effective_weight(peer->endpoints[idx - 1].has_weight ?
+					peer->endpoints[idx - 1].weight : WG_WEIGHT_DEFAULT);
+	}
+	free(copy);
+	return sum;
+}
+
+static void print_rtt_weight_line(const struct wgendpoint *ep, const struct wgpeer *peer, size_t endpoint_index)
+{
+	double weight = ep->has_weight ? ep->weight : WG_WEIGHT_DEFAULT;
+	bool show_share = ep->state == WG_EP_STATE_BLUE &&
+			  endpoint_in_selected_set(endpoint_index, peer->selected_endpoint_indices);
+	double share_pct = 0;
+
+	if (show_share) {
+		double sum = selected_weight_sum(peer, peer->selected_endpoint_indices);
+		if (sum > 0)
+			share_pct = effective_weight(weight) / sum * 100.0;
+		else
+			show_share = false;
+	}
+
+	terminal_printf("    " TERMINAL_BOLD "RTT" TERMINAL_RESET ": ");
+	if (ep->rtt_nanos > 0)
+		terminal_printf("%s", rtt_str(ep->rtt_nanos));
+	else
+		terminal_printf("(none)");
+	if (weight != WG_WEIGHT_DEFAULT)
+		terminal_printf("      " TERMINAL_BOLD "weight" TERMINAL_RESET ": " TERMINAL_FG_CYAN "%.4f" TERMINAL_RESET, weight);
+	else
+		terminal_printf("      " TERMINAL_BOLD "weight" TERMINAL_RESET ": %.4f", weight);
+	if (show_share)
+		terminal_printf("  (~%.1f%% of selected)", share_pct);
+	terminal_printf("\n");
+}
+
 /* Map loss_per_1k (0..1000) to Braille (U+28xx).
  * Dot grid:  1 4 / 2 5 / 3 6  (bit masks dot1=0x01 … dot6=0x20).
  * Levels (good → bad):  6 full; 5 drop top-right; 4 drop top row; 3 empty top, "."/"..";
@@ -519,8 +612,7 @@ static void pretty_print(struct wgdevice *device)
 				terminal_printf("    " TERMINAL_BOLD "transfer" TERMINAL_RESET ": ");
 				terminal_printf("%s received, ", bytes(ep->rx_bytes));
 				terminal_printf("%s sent\n", bytes(ep->tx_bytes));
-				if (ep->rtt_nanos > 0)
-					terminal_printf("    " TERMINAL_BOLD "RTT" TERMINAL_RESET ": %s\n", rtt_str(ep->rtt_nanos));
+				print_rtt_weight_line(ep, peer, i + 1);
 				if (ep->loss_history_len > 0) {
 					uint16_t tx_avg = loss_history_avg(ep->loss_history, ep->loss_history_len);
 					print_loss_line("TX loss", tx_avg, ep->loss_history, ep->loss_history_len);

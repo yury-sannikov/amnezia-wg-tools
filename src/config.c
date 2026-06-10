@@ -508,6 +508,67 @@ static int endpoint_obf_index_from_line(const char *line, const char **value_out
 	return (int)index;
 }
 
+/* EndpointWeight1 = 0.05  ->  UAPI endpoint_weight1=0.05 */
+static int endpoint_weight_index_from_line(const char *line, const char **value_out)
+{
+	const char *prefix = "EndpointWeight";
+	size_t prefix_len = strlen(prefix);
+	const char *p = line;
+	unsigned long index = 0;
+
+	if (strncasecmp(line, prefix, prefix_len))
+		return 0;
+	p += prefix_len;
+	if (!char_is_digit(*p))
+		return 0;
+	while (char_is_digit(*p)) {
+		index = index * 10 + (*p - '0');
+		p++;
+	}
+	if (*p != '=' || index == 0)
+		return 0;
+	*value_out = p + 1;
+	return (int)index;
+}
+
+static int endpoint_weight_index_from_arg(const char *arg)
+{
+	const char *prefix = "endpoint_weight";
+	size_t prefix_len = strlen(prefix);
+	const char *p = arg;
+	unsigned long index = 0;
+
+	if (strncasecmp(arg, prefix, prefix_len))
+		return 0;
+	p += prefix_len;
+	if (!char_is_digit(*p))
+		return 0;
+	while (char_is_digit(*p)) {
+		index = index * 10 + (*p - '0');
+		p++;
+	}
+	if (*p != '\0' || index == 0)
+		return 0;
+	return (int)index;
+}
+
+static bool parse_endpoint_weight(struct wgendpoint *ep, const char *value)
+{
+	char *end;
+	double w;
+
+	w = strtod(value, &end);
+	if (end == value || (*end && *end != '\n'))
+		return false;
+	if (w < WG_WEIGHT_FLOOR)
+		w = WG_WEIGHT_FLOOR;
+	if (w > WG_WEIGHT_MAX)
+		w = WG_WEIGHT_MAX;
+	ep->weight = w;
+	ep->has_weight = true;
+	return true;
+}
+
 static int endpoint_index_from_arg(const char *arg)
 {
 	const char *prefix = "endpoint";
@@ -930,9 +991,18 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 	} else if (ctx->is_peer_section) {
 		const char *endpoint_value = NULL;
 		const char *obf_value = NULL;
+		const char *weight_value = NULL;
 		int endpoint_index;
+		int weight_index = endpoint_weight_index_from_line(line, &weight_value);
 		int obf_index = endpoint_obf_index_from_line(line, &obf_value);
-		if (obf_index > 0) {
+		if (weight_index > 0) {
+			if (weight_index > (int)ctx->last_peer->endpoints_len) {
+				fprintf(stderr, "EndpointWeight%d: configure Endpoint%d first\n", weight_index, weight_index);
+				ret = false;
+				goto error;
+			}
+			ret = parse_endpoint_weight(&ctx->last_peer->endpoints[weight_index - 1], weight_value);
+		} else if (obf_index > 0) {
 			if (obf_index > (int)ctx->last_peer->endpoints_len) {
 				fprintf(stderr, "EndpointObf%d: configure Endpoint%d first\n", obf_index, obf_index);
 				ret = false;
@@ -1327,6 +1397,17 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 			argv += 1;
 			argc -= 1;
 		} else if (peer) {
+			int weight_idx = endpoint_weight_index_from_arg(argv[0]);
+			if (weight_idx > 0 && argc >= 2) {
+				if (weight_idx > (int)peer->endpoints_len) {
+					fprintf(stderr, "endpoint_weight%d: configure endpoint%d first\n", weight_idx, weight_idx);
+					goto error;
+				}
+				if (!parse_endpoint_weight(&peer->endpoints[weight_idx - 1], argv[1]))
+					goto error;
+				argv += 2;
+				argc -= 2;
+			} else {
 			int obf_idx = endpoint_obf_index_from_arg(argv[0]);
 			if (obf_idx > 0 && argc >= 2) {
 				if (obf_idx > (int)peer->endpoints_len) {
@@ -1421,6 +1502,7 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 			} else {
 				fprintf(stderr, "Invalid argument: %s\n", argv[0]);
 				goto error;
+			}
 			}
 			}
 		} else {

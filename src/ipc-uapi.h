@@ -180,6 +180,8 @@ static int userspace_set_device(struct wgdevice *dev)
 						else
 							fprintf(f, "endpoint_obf%zu=quic\n", i + 1);
 					}
+					if (ep->has_weight)
+						fprintf(f, "endpoint_weight%zu=%.4f\n", i + 1, ep->weight);
 				}
 			}
 		}
@@ -597,6 +599,16 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			if (!ep)
 				break;
 			ep->rtt_nanos = (int64_t)NUM(0x7fffffffffffffffULL);
+		} else if (peer && endpoint_index_from_key(key, "endpoint_weight") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_weight");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			char *end;
+			if (!ep)
+				break;
+			ep->weight = strtod(value, &end);
+			if (end == value || *end != '\0')
+				break;
+			ep->has_weight = true;
 		} else if (peer && endpoint_index_from_key(key, "endpoint_tx_rank") > 0) {
 			int endpoint_index = endpoint_index_from_key(key, "endpoint_tx_rank");
 			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
