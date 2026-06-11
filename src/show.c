@@ -228,23 +228,6 @@ static char *bytes(uint64_t b)
 	return buf;
 }
 
-static const char *rtt_str(int64_t rtt_nanos)
-{
-	static char buf[64];
-
-	if (rtt_nanos <= 0)
-		return "(none)";
-	if (rtt_nanos < 1000)
-		snprintf(buf, sizeof(buf), "%" PRId64 " ns", rtt_nanos);
-	else if (rtt_nanos < 1000000)
-		snprintf(buf, sizeof(buf), "%.2f µs", (double)rtt_nanos / 1000);
-	else if (rtt_nanos < 1000000000)
-		snprintf(buf, sizeof(buf), "%.2f ms", (double)rtt_nanos / 1000000);
-	else
-		snprintf(buf, sizeof(buf), "%.2f s", (double)rtt_nanos / 1000000000);
-	return buf;
-}
-
 static void format_bytes_plain(char *buf, size_t len, uint64_t b)
 {
 	if (len == 0)
@@ -263,17 +246,21 @@ static void format_bytes_plain(char *buf, size_t len, uint64_t b)
 
 static void format_rtt_plain(char *buf, size_t len, const struct wgendpoint *ep)
 {
+	long long last_ms, min_ms;
+
 	if (len == 0)
 		return;
 	if (ep->rtt_nanos <= 0) {
 		snprintf(buf, len, "(none)");
 		return;
 	}
-	if (ep->has_min_rtt && ep->min_rtt_nanos > 0)
-		snprintf(buf, len, "%lld/%lldms", (long long)(ep->rtt_nanos / 1000000),
-			 (long long)(ep->min_rtt_nanos / 1000000));
-	else
-		snprintf(buf, len, "%s", rtt_str(ep->rtt_nanos));
+	last_ms = (long long)(ep->rtt_nanos / 1000000);
+	if (ep->has_min_rtt && ep->min_rtt_nanos > 0) {
+		min_ms = (long long)(ep->min_rtt_nanos / 1000000);
+		snprintf(buf, len, "%lld/%lldms", last_ms, min_ms);
+	} else {
+		snprintf(buf, len, "%.2fms", (double)ep->rtt_nanos / 1000000.0);
+	}
 }
 
 static void print_ep_state_dot(uint32_t state)
@@ -337,8 +324,8 @@ static void print_ep_metrics(const struct wgendpoint *ep, const struct wgpeer *p
 	double share_pct;
 	bool show_share = ep_selected_share_pct(ep, peer, endpoint_index, &share_pct);
 	bool auto_w = peer && (peer->flags & WGPEER_HAS_THROUGHPUT_WEIGHTING) && peer->throughput_weighting;
-	char rtt_plain[16], weight_plain[40], cap_plain[24], tx_plain[16], rx_plain[16];
-	char fast_buf[32], btl_buf[32];
+	char rtt_plain[64], weight_plain[80], cap_plain[96], tx_plain[32], rx_plain[32];
+	char fast_buf[64], btl_buf[64];
 	size_t woff = 0;
 
 	format_rtt_plain(rtt_plain, sizeof(rtt_plain), ep);
