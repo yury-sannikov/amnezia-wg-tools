@@ -318,14 +318,21 @@ static void print_ep_header(size_t index, const struct wgendpoint *ep, const cha
 	terminal_printf("\n");
 }
 
+#define EP_SHOW_RTT_LEN     64
+#define EP_SHOW_WEIGHT_LEN  80
+#define EP_SHOW_XFER_LEN    32
+#define EP_SHOW_BPS_LEN     64
+#define EP_SHOW_CAP_LEN     (EP_SHOW_BPS_LEN * 2 + 2)
+
 static void print_ep_metrics(const struct wgendpoint *ep, const struct wgpeer *peer, size_t endpoint_index)
 {
 	double static_w = ep_static_weight(ep);
 	double share_pct;
 	bool show_share = ep_selected_share_pct(ep, peer, endpoint_index, &share_pct);
 	bool auto_w = peer && (peer->flags & WGPEER_HAS_THROUGHPUT_WEIGHTING) && peer->throughput_weighting;
-	char rtt_plain[64], weight_plain[80], cap_plain[96], tx_plain[32], rx_plain[32];
-	char fast_buf[64], btl_buf[64];
+	char rtt_plain[EP_SHOW_RTT_LEN], weight_plain[EP_SHOW_WEIGHT_LEN];
+	char cap_plain[EP_SHOW_CAP_LEN], tx_plain[EP_SHOW_XFER_LEN], rx_plain[EP_SHOW_XFER_LEN];
+	char fast_buf[EP_SHOW_BPS_LEN], btl_buf[EP_SHOW_BPS_LEN];
 	size_t woff = 0;
 
 	format_rtt_plain(rtt_plain, sizeof(rtt_plain), ep);
