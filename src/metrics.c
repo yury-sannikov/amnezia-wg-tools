@@ -17,6 +17,7 @@
 #include <sys/socket.h>
 
 #include "containers.h"
+#include "endpoint_stats.h"
 #include "ipc.h"
 #include "encoding.h"
 #include "subcommands.h"
@@ -85,6 +86,110 @@ static void json_string(const char *s)
 	fputc('"', stdout);
 }
 
+static void json_print_loss_history(const uint16_t *history, size_t len)
+{
+	size_t i;
+
+	printf("[");
+	for (i = 0; i < len; i++) {
+		if (i > 0)
+			printf(", ");
+		printf("%u", (unsigned int)history[i]);
+	}
+	printf("]");
+}
+
+static void print_endpoint_json(const struct wgendpoint *ep, const struct wgpeer *peer, size_t endpoint_index, time_t now)
+{
+	const char *ep_str = NULL;
+	double share_pct;
+	bool has_share = ep_selected_share_pct(ep, peer, endpoint_index, &share_pct);
+	uint16_t rx_avg;
+	bool has_rx_avg = ep_peer_loss_avg(ep, &rx_avg);
+
+	if (ep->addr.ss_family == AF_INET || ep->addr.ss_family == AF_INET6)
+		ep_str = endpoint_str((const struct sockaddr *)&ep->addr);
+
+	printf("        \"index\": %zu,\n", endpoint_index);
+	printf("        \"endpoint\": ");
+	json_string(ep_str);
+	printf(",\n");
+	printf("        \"direction\": \"%s\",\n", ep->is_initiator ? "initiator" : "responder");
+	printf("        \"bind_port\": %u,\n", ep->bind_port);
+	printf("        \"state\": \"%s\",\n", state_str(ep->state));
+
+	if (ep->last_received_time.tv_sec > 0 && now >= ep->last_received_time.tv_sec)
+		printf("        \"last_rx_ago_sec\": %lld,\n", (long long)(now - ep->last_received_time.tv_sec));
+	else
+		printf("        \"last_rx_ago_sec\": -1,\n");
+
+	printf("        \"rx_bytes\": %" PRIu64 ",\n", ep->rx_bytes);
+	printf("        \"tx_bytes\": %" PRIu64 ",\n", ep->tx_bytes);
+
+	if (ep->rtt_nanos > 0)
+		printf("        \"rtt_ms\": %.2f,\n", (double)ep->rtt_nanos / 1000000.0);
+	else
+		printf("        \"rtt_ms\": -1,\n");
+
+	printf("        \"avg_loss_per_1000\": %u,\n", ep->avg_loss);
+	printf("        \"tx_rank\": %u,\n", ep->tx_rank);
+
+	printf("        \"weight\": %.4f,\n", ep_static_weight(ep));
+	if (ep->has_computed_weight)
+		printf("        \"computed_weight\": %.4f,\n", ep->computed_weight);
+	else
+		printf("        \"computed_weight\": null,\n");
+	printf("        \"effective_weight\": %.4f,\n", ep_effective_weight(ep, peer));
+	if (has_share)
+		printf("        \"selected_share_pct\": %.1f,\n", share_pct);
+	else
+		printf("        \"selected_share_pct\": null,\n");
+
+	if (ep->has_min_rtt && ep->min_rtt_nanos > 0)
+		printf("        \"min_rtt_ms\": %.2f,\n", (double)ep->min_rtt_nanos / 1000000.0);
+	else
+		printf("        \"min_rtt_ms\": null,\n");
+
+	if (ep->has_fast_rate)
+		printf("        \"fast_rate_bps\": %" PRIu64 ",\n", ep->fast_rate_bps);
+	else
+		printf("        \"fast_rate_bps\": null,\n");
+
+	if (ep->has_btlbw)
+		printf("        \"btlbw_bps\": %" PRIu64 ",\n", ep->btlbw_bps);
+	else
+		printf("        \"btlbw_bps\": null,\n");
+
+	printf("        \"obfuscation\": ");
+	json_string(ep_obfuscation_json(ep));
+	printf(",\n");
+
+	printf("        \"loss\": {\n");
+	printf("          \"tx\": {\n");
+	if (ep->has_avg_loss || ep->loss_history_len > 0) {
+		printf("            \"avg_per_1000\": %u,\n", ep->avg_loss);
+		printf("            \"history\": ");
+		json_print_loss_history(ep->loss_history, ep->loss_history_len);
+		printf("\n");
+	} else {
+		printf("            \"avg_per_1000\": null,\n");
+		printf("            \"history\": []\n");
+	}
+	printf("          },\n");
+	printf("          \"rx\": {\n");
+	if (has_rx_avg) {
+		printf("            \"avg_per_1000\": %u,\n", rx_avg);
+		printf("            \"history\": ");
+		json_print_loss_history(ep->peer_loss_history, ep->peer_loss_history_len);
+		printf("\n");
+	} else {
+		printf("            \"avg_per_1000\": null,\n");
+		printf("            \"history\": []\n");
+	}
+	printf("          }\n");
+	printf("        }\n");
+}
+
 static void print_peer_json(const struct wgpeer *peer, bool first_peer)
 {
 	time_t now = time(NULL);
@@ -118,7 +223,6 @@ static void print_peer_json(const struct wgpeer *peer, bool first_peer)
 		printf("      \"last_handshake_ago_sec\": -1\n");
 	printf("    },\n");
 
-	/* Endpoint strategy */
 	printf("    \"endpoint_strategy\": ");
 	if (peer->flags & WGPEER_HAS_ENDPOINT_STRATEGY && peer->endpoint_strategy)
 		json_string(peer->endpoint_strategy);
@@ -126,45 +230,27 @@ static void print_peer_json(const struct wgpeer *peer, bool first_peer)
 		printf("null");
 	printf(",\n");
 
-	/* Overall data transfer */
+	printf("    \"selected_endpoint_indices\": ");
+	if (peer->selected_endpoint_indices && peer->selected_endpoint_indices[0])
+		json_string(peer->selected_endpoint_indices);
+	else
+		printf("null");
+	printf(",\n");
+
+	printf("    \"throughput_weighting\": %s,\n",
+	       (peer->flags & WGPEER_HAS_THROUGHPUT_WEIGHTING) ?
+		       (peer->throughput_weighting ? "true" : "false") :
+		       "false");
+
 	printf("    \"rx_bytes\": %" PRIu64 ",\n", peer->rx_bytes);
 	printf("    \"tx_bytes\": %" PRIu64 ",\n", peer->tx_bytes);
 
-	/* Data endpoints */
 	printf("    \"endpoints\": [\n");
 	for (size_t i = 0; i < peer->endpoints_len; i++) {
-		const struct wgendpoint *ep = &peer->endpoints[i];
-		const char *ep_str = NULL;
-
-		if (ep->addr.ss_family == AF_INET || ep->addr.ss_family == AF_INET6)
-			ep_str = endpoint_str((const struct sockaddr *)&ep->addr);
-
 		if (i > 0)
 			printf(",\n");
 		printf("      {\n");
-		printf("        \"index\": %zu,\n", i + 1);
-		printf("        \"endpoint\": ");
-		json_string(ep_str);
-		printf(",\n");
-		printf("        \"direction\": \"%s\",\n", ep->is_initiator ? "initiator" : "responder");
-		printf("        \"bind_port\": %u,\n", ep->bind_port);
-		printf("        \"state\": \"%s\",\n", state_str(ep->state));
-
-		if (ep->last_received_time.tv_sec > 0 && now >= ep->last_received_time.tv_sec)
-			printf("        \"last_rx_ago_sec\": %lld,\n", (long long)(now - ep->last_received_time.tv_sec));
-		else
-			printf("        \"last_rx_ago_sec\": -1,\n");
-
-		printf("        \"rx_bytes\": %" PRIu64 ",\n", ep->rx_bytes);
-		printf("        \"tx_bytes\": %" PRIu64 ",\n", ep->tx_bytes);
-
-		if (ep->rtt_nanos > 0)
-			printf("        \"rtt_ms\": %.2f,\n", (double)ep->rtt_nanos / 1000000.0);
-		else
-			printf("        \"rtt_ms\": -1,\n");
-
-		printf("        \"avg_loss_per_1000\": %u,\n", ep->avg_loss);
-		printf("        \"tx_rank\": %u\n", ep->tx_rank);
+		print_endpoint_json(&peer->endpoints[i], peer, i + 1, now);
 		printf("      }");
 	}
 	if (peer->endpoints_len)

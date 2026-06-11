@@ -140,6 +140,8 @@ int showconf_main(int argc, const char *argv[])
 			printf("ControlRelay = %s\n", peer->control_relay);
 		if (peer->flags & WGPEER_HAS_ENDPOINT_STRATEGY && peer->endpoint_strategy)
 			printf("EndpointStrategy = %s\n", peer->endpoint_strategy);
+		if (peer->throughput_weighting)
+			printf("ThroughputWeighting = on\n");
 
 		/* Output data endpoints */
 		for (size_t i = 0; i < peer->endpoints_len; i++) {

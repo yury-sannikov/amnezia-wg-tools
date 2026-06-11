@@ -1057,6 +1057,10 @@ static bool process_line(struct config_ctx *ctx, const char *line)
 			ret = parse_awg_string(&ctx->last_peer->endpoint_strategy, "EndpointStrategy", value);
 			if (ret)
 				ctx->last_peer->flags |= WGPEER_HAS_ENDPOINT_STRATEGY;
+		} else if (key_match("ThroughputWeighting")) {
+			ret = parse_bool(&ctx->last_peer->throughput_weighting, "ThroughputWeighting", value);
+			if (ret)
+				ctx->last_peer->flags |= WGPEER_HAS_THROUGHPUT_WEIGHTING;
 		} else if (key_match("PublicKey")) {
 			ret = parse_key(ctx->last_peer->public_key, value);
 			if (ret)
@@ -1463,6 +1467,12 @@ struct wgdevice *config_read_cmd(const char *argv[], int argc)
 				if (!parse_awg_string(&peer->endpoint_strategy, "EndpointStrategy", argv[1]))
 					goto error;
 				peer->flags |= WGPEER_HAS_ENDPOINT_STRATEGY;
+				argv += 2;
+				argc -= 2;
+			} else if (!strcmp(argv[0], "throughput-weighting") && argc >= 2) {
+				if (!parse_bool(&peer->throughput_weighting, "ThroughputWeighting", argv[1]))
+					goto error;
+				peer->flags |= WGPEER_HAS_THROUGHPUT_WEIGHTING;
 				argv += 2;
 				argc -= 2;
 			} else if (!strcmp(argv[0], "allowed-ips") && argc >= 2) {

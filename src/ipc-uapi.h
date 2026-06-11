@@ -209,6 +209,8 @@ static int userspace_set_device(struct wgdevice *dev)
 			fprintf(f, "persistent_keepalive_interval=%u\n", peer->persistent_keepalive_interval);
 		if (peer->flags & WGPEER_HAS_PROBE)
 			fprintf(f, "probe=%u:%d\n", peer->probe_timeout_sec, peer->probe_num_tests);
+		if (peer->flags & WGPEER_HAS_THROUGHPUT_WEIGHTING)
+			fprintf(f, "throughput_weighting=%s\n", peer->throughput_weighting ? "true" : "false");
 		if (peer->flags & WGPEER_REPLACE_ALLOWEDIPS)
 			fprintf(f, "replace_allowed_ips=true\n");
 		for_each_wgallowedip(peer, allowedip) {
@@ -621,6 +623,38 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			if (!ep)
 				break;
 			ep->avg_loss = (uint16_t)NUM(1000U);
+			ep->has_avg_loss = true;
+		} else if (peer && endpoint_index_from_key(key, "endpoint_computed_weight") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_computed_weight");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			char *end;
+			if (!ep)
+				break;
+			ep->computed_weight = strtod(value, &end);
+			if (end == value || *end != '\0')
+				break;
+			ep->has_computed_weight = true;
+		} else if (peer && endpoint_index_from_key(key, "endpoint_min_rtt") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_min_rtt");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
+			ep->min_rtt_nanos = (int64_t)NUM(0x7fffffffffffffffULL);
+			ep->has_min_rtt = true;
+		} else if (peer && endpoint_index_from_key(key, "endpoint_btlbw_bps") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_btlbw_bps");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
+			ep->btlbw_bps = NUM(UINT64_MAX);
+			ep->has_btlbw = true;
+		} else if (peer && endpoint_index_from_key(key, "endpoint_fast_rate_bps") > 0) {
+			int endpoint_index = endpoint_index_from_key(key, "endpoint_fast_rate_bps");
+			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
+			if (!ep)
+				break;
+			ep->fast_rate_bps = NUM(UINT64_MAX);
+			ep->has_fast_rate = true;
 		} else if (peer && endpoint_index_from_key(key, "endpoint_loss_history") > 0) {
 			int endpoint_index = endpoint_index_from_key(key, "endpoint_loss_history");
 			struct wgendpoint *ep = ensure_peer_endpoint(peer, endpoint_index);
@@ -725,7 +759,10 @@ static int userspace_get_device(struct wgdevice **out, const char *iface)
 			}
 		} else if (peer && !strcmp(key, "direct_recoveries"))
 			peer->direct_recoveries = NUM(0xffffffffffffffffULL);
-		else if (peer && !strcmp(key, "probe")) {
+		else if (peer && !strcmp(key, "throughput_weighting")) {
+			peer->throughput_weighting = !strcmp(value, "true");
+			peer->flags |= WGPEER_HAS_THROUGHPUT_WEIGHTING;
+		} else if (peer && !strcmp(key, "probe")) {
 			char *colon = strchr(value, ':');
 			unsigned long timeout_val;
 			long num_tests_val;

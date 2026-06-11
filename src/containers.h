@@ -69,8 +69,17 @@ struct wgendpoint {
 	uint16_t avg_loss; /* average loss per 1000 (from UAPI endpoint_avg_loss) */
 	uint8_t obf_type;  /* 0 = none (default bwg:high-entropy), 1 = quic */
 	char obf_sni[256]; /* pinned SNI for quic obfuscation; empty = random decoy */
-	double weight;     /* selection bias (default 1.0); from UAPI endpoint_weightN */
-	bool has_weight;   /* true once endpoint_weightN received from GET or set locally */
+	double weight;          /* static selection bias; from UAPI endpoint_weightN */
+	double computed_weight; /* throughput-derived weight; from endpoint_computed_weightN */
+	bool has_weight;
+	bool has_computed_weight;
+	bool has_avg_loss; /* true once endpoint_avg_lossN received from GET */
+	int64_t min_rtt_nanos;
+	uint64_t btlbw_bps;
+	uint64_t fast_rate_bps;
+	bool has_min_rtt;
+	bool has_btlbw;
+	bool has_fast_rate;
 };
 
 enum {
@@ -91,7 +100,8 @@ enum {
 	WGPEER_HAS_CONTROL_ENDPOINT = 1U << 6,
 	WGPEER_HAS_ENDPOINT_STRATEGY = 1U << 7,
 	WGPEER_HAS_PROBE = 1U << 8,
-	WGPEER_HAS_CONTROL_RELAY = 1U << 9
+	WGPEER_HAS_CONTROL_RELAY = 1U << 9,
+	WGPEER_HAS_THROUGHPUT_WEIGHTING = 1U << 10
 };
 
 struct wgpeer {
@@ -132,6 +142,7 @@ struct wgpeer {
 	char *control_relay;        /* comma-separated relay IPs (e.g. "8.8.8.8,1.1.1.1") */
 	char *control_relay_active; /* currently active relay IP (runtime, read-only) */
 	uint64_t direct_recoveries; /* count of successful direct fallback recoveries (runtime, read-only) */
+	bool throughput_weighting;  /* when true, selection uses computed_weight */
 
 	struct wgallowedip *first_allowedip, *last_allowedip;
 	struct wgpeer *next_peer;

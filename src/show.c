@@ -20,6 +20,7 @@
 #include <netdb.h>
 
 #include "containers.h"
+#include "endpoint_stats.h"
 #include "ipc.h"
 #include "terminal.h"
 #include "encoding.h"
@@ -244,103 +245,106 @@ static const char *rtt_str(int64_t rtt_nanos)
 	return buf;
 }
 
-static double effective_weight(double w)
+static void print_ep_state_dot(uint32_t state)
 {
-	if (w < WG_WEIGHT_FLOOR)
-		return WG_WEIGHT_FLOOR;
-	return w;
-}
-
-static bool endpoint_in_selected_set(size_t endpoint_index, const char *selected_indices)
-{
-	char *copy, *val, *tok;
-
-	if (!selected_indices || !selected_indices[0])
-		return false;
-	copy = strdup(selected_indices);
-	if (!copy)
-		return false;
-	val = copy;
-	while ((tok = strsep(&val, ",")) != NULL) {
-		char *end;
-		unsigned long idx;
-
-		while (*tok == ' ' || *tok == '\t')
-			tok++;
-		if (!*tok)
-			continue;
-		idx = strtoul(tok, &end, 10);
-		if (*end == '\0' && idx == endpoint_index) {
-			free(copy);
-			return true;
-		}
+	switch (state) {
+	case WG_EP_STATE_GREEN:
+		terminal_printf(TERMINAL_FG_GREEN "●" TERMINAL_RESET "%s", endpoint_state_string(state));
+		break;
+	case WG_EP_STATE_ERROR:
+		terminal_printf(TERMINAL_FG_RED "●" TERMINAL_RESET "%s", endpoint_state_string(state));
+		break;
+	case WG_EP_STATE_BLUE:
+		terminal_printf(TERMINAL_FG_BLUE "●" TERMINAL_RESET "%s", endpoint_state_string(state));
+		break;
+	case WG_EP_STATE_ORANGE:
+		terminal_printf(TERMINAL_FG_YELLOW "●" TERMINAL_RESET "%s", endpoint_state_string(state));
+		break;
+	default:
+		terminal_printf(TERMINAL_FG_GRAY "●" TERMINAL_RESET "%s", endpoint_state_string(state));
+		break;
 	}
-	free(copy);
-	return false;
 }
 
-static double selected_weight_sum(const struct wgpeer *peer, const char *selected_indices)
+static void print_ep_direction_arrow(const struct wgendpoint *ep)
 {
-	char *copy, *val, *tok;
-	double sum = 0;
-
-	if (!peer || !selected_indices || !selected_indices[0])
-		return 0;
-	copy = strdup(selected_indices);
-	if (!copy)
-		return 0;
-	val = copy;
-	while ((tok = strsep(&val, ",")) != NULL) {
-		char *end;
-		unsigned long idx;
-
-		while (*tok == ' ' || *tok == '\t')
-			tok++;
-		if (!*tok)
-			continue;
-		idx = strtoul(tok, &end, 10);
-		if (*end != '\0' || idx == 0 || idx > peer->endpoints_len)
-			continue;
-		sum += effective_weight(peer->endpoints[idx - 1].has_weight ?
-					peer->endpoints[idx - 1].weight : WG_WEIGHT_DEFAULT);
-	}
-	free(copy);
-	return sum;
-}
-
-static void print_rtt_weight_line(const struct wgendpoint *ep, const struct wgpeer *peer, size_t endpoint_index)
-{
-	double weight = ep->has_weight ? ep->weight : WG_WEIGHT_DEFAULT;
-	bool show_share = ep->state == WG_EP_STATE_BLUE &&
-			  endpoint_in_selected_set(endpoint_index, peer->selected_endpoint_indices);
-	double share_pct = 0;
-
-	if (show_share) {
-		double sum = selected_weight_sum(peer, peer->selected_endpoint_indices);
-		if (sum > 0)
-			share_pct = effective_weight(weight) / sum * 100.0;
+	if (ep->tx_rank > 0) {
+		if (ep->is_initiator)
+			terminal_printf(TERMINAL_FG_CYAN "->" TERMINAL_RESET " ");
 		else
-			show_share = false;
+			terminal_printf(TERMINAL_FG_CYAN "<->" TERMINAL_RESET " ");
+	} else if (ep->is_initiator) {
+		terminal_printf("-> ");
+	} else {
+		terminal_printf("<- ");
 	}
+}
 
-	terminal_printf("    " TERMINAL_BOLD "RTT" TERMINAL_RESET ": ");
-	if (ep->rtt_nanos > 0)
-		terminal_printf("%s", rtt_str(ep->rtt_nanos));
+static void print_ep_header(size_t index, const struct wgendpoint *ep, const char *data_ep)
+{
+	terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET " ", index);
+	print_ep_state_dot(ep->state);
+	terminal_printf(" ");
+	print_ep_direction_arrow(ep);
+	terminal_printf("%s", data_ep);
+	if (ep->bind_port)
+		terminal_printf("#%u", ep->bind_port);
+	terminal_printf("  ");
+	if (ep->obf_type == 1)
+		terminal_printf(TERMINAL_FG_GREEN "%s" TERMINAL_RESET, ep_obf_short(ep));
 	else
-		terminal_printf("(none)");
-	if (weight != WG_WEIGHT_DEFAULT)
-		terminal_printf("      " TERMINAL_BOLD "weight" TERMINAL_RESET ": " TERMINAL_FG_CYAN "%.4f" TERMINAL_RESET, weight);
-	else
-		terminal_printf("      " TERMINAL_BOLD "weight" TERMINAL_RESET ": %.4f", weight);
-	if (show_share)
-		terminal_printf("  (~%.1f%% of selected)", share_pct);
+		terminal_printf(TERMINAL_FG_GREEN "he" TERMINAL_RESET);
+	terminal_printf("  " TERMINAL_BOLD "rx" TERMINAL_RESET ":%s", latest_rx_str(ep));
+	if (ep->tx_rank > 0)
+		terminal_printf("  sel#%u", ep->tx_rank);
 	terminal_printf("\n");
 }
 
-/* Map loss_per_1k (0..1000) to Braille (U+28xx).
- * Dot grid:  1 4 / 2 5 / 3 6  (bit masks dot1=0x01 … dot6=0x20).
- * Levels (good → bad):  6 full; 5 drop top-right; 4 drop top row; 3 empty top, "."/"..";
- *   2 bottom row only; 1 bottom-left only; loss>=1000 → '_' */
+static void print_ep_metrics(const struct wgendpoint *ep, const struct wgpeer *peer, size_t endpoint_index)
+{
+	double static_w = ep_static_weight(ep);
+	double share_pct;
+	bool show_share = ep_selected_share_pct(ep, peer, endpoint_index, &share_pct);
+	bool auto_w = peer && (peer->flags & WGPEER_HAS_THROUGHPUT_WEIGHTING) && peer->throughput_weighting &&
+		      ep->has_computed_weight;
+	char fast_buf[32], btl_buf[32];
+
+	terminal_printf("    ");
+	if (ep->rtt_nanos > 0) {
+		if (ep->has_min_rtt && ep->min_rtt_nanos > 0)
+			terminal_printf("%lld/%lldms", (long long)(ep->rtt_nanos / 1000000),
+					(long long)(ep->min_rtt_nanos / 1000000));
+		else
+			terminal_printf("%s", rtt_str(ep->rtt_nanos));
+	} else {
+		terminal_printf("(none)");
+	}
+
+	terminal_printf("  ");
+	if (auto_w) {
+		if (static_w != ep->computed_weight)
+			terminal_printf("w%.2f" TERMINAL_FG_CYAN "←%.2f" TERMINAL_RESET, ep->computed_weight, static_w);
+		else
+			terminal_printf("w%.2f", ep->computed_weight);
+	} else if (static_w != WG_WEIGHT_DEFAULT) {
+		terminal_printf("w%.2f" TERMINAL_FG_CYAN, static_w);
+		terminal_printf(TERMINAL_RESET);
+	} else {
+		terminal_printf("w%.2f", static_w);
+	}
+	if (show_share)
+		terminal_printf("(%.0f%%)", share_pct);
+
+	if (ep->has_fast_rate && ep->has_btlbw) {
+		format_bps_short(fast_buf, sizeof(fast_buf), ep->fast_rate_bps);
+		format_bps_short(btl_buf, sizeof(btl_buf), ep->btlbw_bps);
+		terminal_printf("  cap %s/%s", fast_buf, btl_buf);
+	}
+
+	terminal_printf("  ↑%s ↓%s\n", bytes(ep->tx_bytes), bytes(ep->rx_bytes));
+}
+
+/* Map loss_per_1k (0..1000) to Braille (U+28xx). */
 static void loss_to_braille_utf8(char buf[4], uint16_t loss_per_1k)
 {
 	int level;
@@ -397,45 +401,37 @@ static void loss_to_braille_utf8(char buf[4], uint16_t loss_per_1k)
 	}
 }
 
-/* Compute average loss per 1000 over history (rounded). */
-static uint16_t loss_history_avg(const uint16_t *history, size_t len)
-{
-	unsigned int sum = 0;
-	size_t i;
-	if (len == 0)
-		return 0;
-	for (i = 0; i < len; i++)
-		sum += history[i];
-	return (uint16_t)((sum + len / 2) / len); /* rounded */
-}
-
-/* Print loss line: fixed-width number (4 chars) so TX and RX bars align. Pad to 16 chars total.
- * value_display is the number shown (e.g. average); history is used for the braille bar.
- * Show "n/a" only when the daemon sent no loss history (len == 0).
- * Bars plot each minute in the ring (up to 16), oldest→newest left→right. The headline is the
- * daemon’s average over the last ~5 minutes only — it can read 0/1000 while an older minute in
- * the ring still shows partial bars; conversely a bad minute scrolls out after ~16 minutes. */
-static void print_loss_line(const char *label, uint16_t value_display, const uint16_t *history, size_t len)
+static void print_loss_side(const char *label, bool has_value, uint16_t value,
+			    const uint16_t *history, size_t len)
 {
 	char braille[4];
 	size_t i;
-	bool no_sample = (len == 0);
 
-	if (no_sample) {
-		terminal_printf("    " TERMINAL_BOLD "%s" TERMINAL_RESET ": " TERMINAL_FG_YELLOW "n/a" TERMINAL_RESET " (no loss sample)  ", label);
+	terminal_printf("%s ", label);
+	if (!has_value) {
+		terminal_printf(TERMINAL_FG_YELLOW "n/a" TERMINAL_RESET "  ");
 		for (i = 0; i < WG_LOSS_HISTORY_SIZE; i++)
 			terminal_printf(" ");
-		terminal_printf("\n");
 		return;
 	}
-
-	terminal_printf("    " TERMINAL_BOLD "%s" TERMINAL_RESET ": %4u/1000   ", label, (unsigned int)value_display);
+	terminal_printf("%4u  ", (unsigned int)value);
 	for (i = 0; i < len; i++) {
 		loss_to_braille_utf8(braille, history[i]);
 		terminal_printf("%s", braille);
 	}
 	for (i = len; i < WG_LOSS_HISTORY_SIZE; i++)
 		terminal_printf(" ");
+}
+
+static void print_ep_loss_pair(const struct wgendpoint *ep)
+{
+	bool has_tx = ep->has_avg_loss || ep->loss_history_len > 0;
+	uint16_t rx_avg;
+
+	terminal_printf("    ");
+	print_loss_side("tx", has_tx, ep->avg_loss, ep->loss_history, ep->loss_history_len);
+	terminal_printf("    ");
+	print_loss_side("rx", ep_peer_loss_avg(ep, &rx_avg), rx_avg, ep->peer_loss_history, ep->peer_loss_history_len);
 	terminal_printf("\n");
 }
 
@@ -551,76 +547,9 @@ static void pretty_print(struct wgdevice *device)
 				char data_ep[4096 + 512 + 4];
 				strncpy(data_ep, endpoint((struct sockaddr *)&ep->addr), sizeof(data_ep) - 1);
 				data_ep[sizeof(data_ep) - 1] = '\0';
-			{
-				if (ep->tx_rank > 0) {
-					/* Initiator + TX: outbound arrow; responder + TX: bidirectional (<->). */
-					if (ep->is_initiator) {
-						if (ep->bind_port)
-							terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": "
-								TERMINAL_FG_CYAN "->" TERMINAL_RESET " %s (bind %u)\n",
-								i + 1, data_ep, ep->bind_port);
-						else
-							terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": "
-								TERMINAL_FG_CYAN "->" TERMINAL_RESET " %s\n",
-								i + 1, data_ep);
-					} else {
-						if (ep->bind_port)
-							terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": "
-								TERMINAL_FG_CYAN "<->" TERMINAL_RESET " %s (bind %u)\n",
-								i + 1, data_ep, ep->bind_port);
-						else
-							terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": "
-								TERMINAL_FG_CYAN "<->" TERMINAL_RESET " %s\n",
-								i + 1, data_ep);
-					}
-				} else {
-					const char *direction = ep->is_initiator ? "->" : "<-";
-
-					if (ep->bind_port)
-						terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": %s %s (bind %u)\n", i + 1, direction, data_ep, ep->bind_port);
-					else
-						terminal_printf("  " TERMINAL_BOLD "endpoint%zu" TERMINAL_RESET ": %s %s\n", i + 1, direction, data_ep);
-				}
-			}
-				if (ep->obf_type == 1) {
-					if (ep->obf_sni[0]) {
-						terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_GREEN "bwg:" TERMINAL_FG_RED "quic" TERMINAL_RESET " (%s)\n", ep->obf_sni);
-					} else {
-						terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_GREEN "bwg:" TERMINAL_FG_RED "quic" TERMINAL_RESET "\n");
-					}
-				} else {
-					terminal_printf("    " TERMINAL_BOLD "camouflage" TERMINAL_RESET ": " TERMINAL_FG_GREEN "bwg:high-entropy" TERMINAL_RESET "\n");
-				}
-				terminal_printf("    " TERMINAL_BOLD "state" TERMINAL_RESET ": ");
-				switch (ep->state) {
-				case WG_EP_STATE_GREEN:
-					terminal_printf(TERMINAL_FG_GREEN "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
-					break;
-				case WG_EP_STATE_ERROR:
-					terminal_printf(TERMINAL_FG_RED "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
-					break;
-				case WG_EP_STATE_BLUE:
-					terminal_printf(TERMINAL_FG_BLUE "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
-					break;
-				case WG_EP_STATE_ORANGE:
-					terminal_printf(TERMINAL_FG_YELLOW "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
-					break;
-				default:
-					terminal_printf(TERMINAL_FG_GRAY "●" TERMINAL_RESET " %s,\t" TERMINAL_BOLD "latest rx" TERMINAL_RESET ": %s\n", endpoint_state_string(ep->state), latest_rx_str(ep));
-					break;
-				}
-				terminal_printf("    " TERMINAL_BOLD "transfer" TERMINAL_RESET ": ");
-				terminal_printf("%s received, ", bytes(ep->rx_bytes));
-				terminal_printf("%s sent\n", bytes(ep->tx_bytes));
-				print_rtt_weight_line(ep, peer, i + 1);
-				if (ep->loss_history_len > 0) {
-					uint16_t tx_avg = loss_history_avg(ep->loss_history, ep->loss_history_len);
-					print_loss_line("TX loss", tx_avg, ep->loss_history, ep->loss_history_len);
-				}
-				if (ep->peer_loss_history_len > 0) {
-					uint16_t rx_avg = loss_history_avg(ep->peer_loss_history, ep->peer_loss_history_len);
-					print_loss_line("RX loss", rx_avg, ep->peer_loss_history, ep->peer_loss_history_len);
-				}
+				print_ep_header(i + 1, ep, data_ep);
+				print_ep_metrics(ep, peer, i + 1);
+				print_ep_loss_pair(ep);
 			}
 		}
 		terminal_printf("  " TERMINAL_BOLD "allowed ips" TERMINAL_RESET ": ");
