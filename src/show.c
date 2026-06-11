@@ -245,6 +245,37 @@ static const char *rtt_str(int64_t rtt_nanos)
 	return buf;
 }
 
+static void format_bytes_plain(char *buf, size_t len, uint64_t b)
+{
+	if (len == 0)
+		return;
+	if (b < 1024ULL)
+		snprintf(buf, len, "%u B", (unsigned int)b);
+	else if (b < 1024ULL * 1024ULL)
+		snprintf(buf, len, "%.2f KiB", (double)b / 1024);
+	else if (b < 1024ULL * 1024ULL * 1024ULL)
+		snprintf(buf, len, "%.2f MiB", (double)b / (1024 * 1024));
+	else if (b < 1024ULL * 1024ULL * 1024ULL * 1024ULL)
+		snprintf(buf, len, "%.2f GiB", (double)b / (1024 * 1024 * 1024));
+	else
+		snprintf(buf, len, "%.2f TiB", (double)b / (1024 * 1024 * 1024) / 1024);
+}
+
+static void format_rtt_plain(char *buf, size_t len, const struct wgendpoint *ep)
+{
+	if (len == 0)
+		return;
+	if (ep->rtt_nanos <= 0) {
+		snprintf(buf, len, "(none)");
+		return;
+	}
+	if (ep->has_min_rtt && ep->min_rtt_nanos > 0)
+		snprintf(buf, len, "%lld/%lldms", (long long)(ep->rtt_nanos / 1000000),
+			 (long long)(ep->min_rtt_nanos / 1000000));
+	else
+		snprintf(buf, len, "%s", rtt_str(ep->rtt_nanos));
+}
+
 static void print_ep_state_dot(uint32_t state)
 {
 	switch (state) {
@@ -306,43 +337,34 @@ static void print_ep_metrics(const struct wgendpoint *ep, const struct wgpeer *p
 	double share_pct;
 	bool show_share = ep_selected_share_pct(ep, peer, endpoint_index, &share_pct);
 	bool auto_w = peer && (peer->flags & WGPEER_HAS_THROUGHPUT_WEIGHTING) && peer->throughput_weighting;
+	char rtt_plain[16], weight_plain[40], cap_plain[24], tx_plain[16], rx_plain[16];
 	char fast_buf[32], btl_buf[32];
+	size_t woff = 0;
 
-	terminal_printf("    ");
-	if (ep->rtt_nanos > 0) {
-		if (ep->has_min_rtt && ep->min_rtt_nanos > 0)
-			terminal_printf("%lld/%lldms", (long long)(ep->rtt_nanos / 1000000),
-					(long long)(ep->min_rtt_nanos / 1000000));
-		else
-			terminal_printf("%s", rtt_str(ep->rtt_nanos));
-	} else {
-		terminal_printf("(none)");
-	}
+	format_rtt_plain(rtt_plain, sizeof(rtt_plain), ep);
 
-	terminal_printf("  ");
-	/* static prior → measured estimate (observe); [auto] means selection uses the estimate. */
-	if (ep->has_computed_weight) {
-		terminal_printf("w%.2f", static_w);
-		if (fabs(ep->computed_weight - static_w) > 0.005)
-			terminal_printf(TERMINAL_FG_CYAN "→%.2f" TERMINAL_RESET, ep->computed_weight);
-	} else if (static_w != WG_WEIGHT_DEFAULT) {
-		terminal_printf("w%.2f" TERMINAL_FG_CYAN, static_w);
-		terminal_printf(TERMINAL_RESET);
-	} else {
-		terminal_printf("w%.2f", static_w);
-	}
+	woff = (size_t)snprintf(weight_plain, sizeof(weight_plain), "w%.2f", static_w);
+	if (ep->has_computed_weight && fabs(ep->computed_weight - static_w) > 0.005)
+		woff += (size_t)snprintf(weight_plain + woff, sizeof(weight_plain) - woff, "→%.2f", ep->computed_weight);
 	if (auto_w)
-		terminal_printf(TERMINAL_FG_GREEN "[auto]" TERMINAL_RESET);
+		woff += (size_t)snprintf(weight_plain + woff, sizeof(weight_plain) - woff, "[auto]");
 	if (show_share)
-		terminal_printf("(%.0f%%)", share_pct);
+		woff += (size_t)snprintf(weight_plain + woff, sizeof(weight_plain) - woff, "(%.0f%%)", share_pct);
 
 	if (ep->has_fast_rate && ep->has_btlbw) {
 		format_bps_short(fast_buf, sizeof(fast_buf), ep->fast_rate_bps);
 		format_bps_short(btl_buf, sizeof(btl_buf), ep->btlbw_bps);
-		terminal_printf("  cap %s/%s", fast_buf, btl_buf);
+		snprintf(cap_plain, sizeof(cap_plain), "%s/%s", fast_buf, btl_buf);
+	} else {
+		snprintf(cap_plain, sizeof(cap_plain), "-");
 	}
 
-	terminal_printf("  ↑%s ↓%s\n", bytes(ep->tx_bytes), bytes(ep->rx_bytes));
+	format_bytes_plain(tx_plain, sizeof(tx_plain), ep->tx_bytes);
+	format_bytes_plain(rx_plain, sizeof(rx_plain), ep->rx_bytes);
+
+	/* Fixed columns so cap and xfer align across endpoints (plain text, no ANSI in widths). */
+	terminal_printf("    %-10s  %-28s  cap %-18s  ↑%-10s ↓%-10s\n",
+			rtt_plain, weight_plain, cap_plain, tx_plain, rx_plain);
 }
 
 /* Map loss_per_1k (0..1000) to Braille (U+28xx). */
@@ -415,6 +437,8 @@ static void print_loss_side(const char *label, bool has_value, uint16_t value,
 			terminal_printf(" ");
 		return;
 	}
+	if (value > 1000)
+		value = 1000;
 	terminal_printf("%4u  ", (unsigned int)value);
 	for (i = 0; i < len; i++) {
 		loss_to_braille_utf8(braille, history[i]);
@@ -428,11 +452,13 @@ static void print_ep_loss_pair(const struct wgendpoint *ep)
 {
 	bool has_tx = ep->has_avg_loss || ep->loss_history_len > 0;
 	uint16_t rx_avg;
+	bool has_rx;
 
+	has_rx = ep_peer_loss_avg(ep, &rx_avg);
 	terminal_printf("    ");
 	print_loss_side("tx", has_tx, ep->avg_loss, ep->loss_history, ep->loss_history_len);
 	terminal_printf("    ");
-	print_loss_side("rx", ep_peer_loss_avg(ep, &rx_avg), rx_avg, ep->peer_loss_history, ep->peer_loss_history_len);
+	print_loss_side("rx", has_rx, rx_avg, ep->peer_loss_history, ep->peer_loss_history_len);
 	terminal_printf("\n");
 }
 
