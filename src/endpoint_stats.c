@@ -96,7 +96,8 @@ bool ep_selected_share_pct(const struct wgendpoint *ep, const struct wgpeer *pee
 
 	if (!out_pct || !ep || !peer)
 		return false;
-	if (ep->state != WG_EP_STATE_BLUE || !ep_in_selected_set(endpoint_index, peer->selected_endpoint_indices))
+	/* Selected for TX (sel#N / tx_rank), not blue — blue is emergency one-way mode. */
+	if (ep->tx_rank == 0 && !ep_in_selected_set(endpoint_index, peer->selected_endpoint_indices))
 		return false;
 	sum = ep_selected_weight_sum(peer, peer->selected_endpoint_indices);
 	if (sum <= 0)

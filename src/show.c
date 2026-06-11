@@ -305,8 +305,7 @@ static void print_ep_metrics(const struct wgendpoint *ep, const struct wgpeer *p
 	double static_w = ep_static_weight(ep);
 	double share_pct;
 	bool show_share = ep_selected_share_pct(ep, peer, endpoint_index, &share_pct);
-	bool auto_w = peer && (peer->flags & WGPEER_HAS_THROUGHPUT_WEIGHTING) && peer->throughput_weighting &&
-		      ep->has_computed_weight;
+	bool auto_w = peer && (peer->flags & WGPEER_HAS_THROUGHPUT_WEIGHTING) && peer->throughput_weighting;
 	char fast_buf[32], btl_buf[32];
 
 	terminal_printf("    ");
@@ -321,8 +320,9 @@ static void print_ep_metrics(const struct wgendpoint *ep, const struct wgpeer *p
 	}
 
 	terminal_printf("  ");
-	if (auto_w) {
-		if (static_w != ep->computed_weight)
+	/* Always show computed←static when daemon reports computed_weight (observe before enabling auto). */
+	if (ep->has_computed_weight) {
+		if (fabs(ep->computed_weight - static_w) > 0.005)
 			terminal_printf("w%.2f" TERMINAL_FG_CYAN "←%.2f" TERMINAL_RESET, ep->computed_weight, static_w);
 		else
 			terminal_printf("w%.2f", ep->computed_weight);
@@ -332,6 +332,8 @@ static void print_ep_metrics(const struct wgendpoint *ep, const struct wgpeer *p
 	} else {
 		terminal_printf("w%.2f", static_w);
 	}
+	if (auto_w)
+		terminal_printf(TERMINAL_FG_GREEN "[auto]" TERMINAL_RESET);
 	if (show_share)
 		terminal_printf("(%.0f%%)", share_pct);
 
