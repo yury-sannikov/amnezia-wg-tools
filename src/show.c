@@ -320,12 +320,11 @@ static void print_ep_metrics(const struct wgendpoint *ep, const struct wgpeer *p
 	}
 
 	terminal_printf("  ");
-	/* Always show computed←static when daemon reports computed_weight (observe before enabling auto). */
+	/* static prior → measured estimate (observe); [auto] means selection uses the estimate. */
 	if (ep->has_computed_weight) {
+		terminal_printf("w%.2f", static_w);
 		if (fabs(ep->computed_weight - static_w) > 0.005)
-			terminal_printf("w%.2f" TERMINAL_FG_CYAN "←%.2f" TERMINAL_RESET, ep->computed_weight, static_w);
-		else
-			terminal_printf("w%.2f", ep->computed_weight);
+			terminal_printf(TERMINAL_FG_CYAN "→%.2f" TERMINAL_RESET, ep->computed_weight);
 	} else if (static_w != WG_WEIGHT_DEFAULT) {
 		terminal_printf("w%.2f" TERMINAL_FG_CYAN, static_w);
 		terminal_printf(TERMINAL_RESET);
