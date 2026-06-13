@@ -107,6 +107,15 @@ bool ep_selected_share_pct(const struct wgendpoint *ep, const struct wgpeer *pee
 	return true;
 }
 
+double ep_tx_share(const struct wgendpoint *ep, const struct wgpeer *peer, size_t endpoint_index)
+{
+	double pct;
+
+	if (!ep_selected_share_pct(ep, peer, endpoint_index, &pct))
+		return 0.0;
+	return pct / 100.0;
+}
+
 uint16_t ep_loss_history_avg(const uint16_t *history, size_t len)
 {
 	unsigned int sum = 0;

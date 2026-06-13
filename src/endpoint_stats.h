@@ -15,6 +15,7 @@
 double ep_weight_floor(double w);
 double ep_static_weight(const struct wgendpoint *ep);
 double ep_effective_weight(const struct wgendpoint *ep, const struct wgpeer *peer);
+double ep_tx_share(const struct wgendpoint *ep, const struct wgpeer *peer, size_t endpoint_index);
 bool ep_in_selected_set(size_t endpoint_index, const char *selected_indices);
 double ep_selected_weight_sum(const struct wgpeer *peer, const char *selected_indices);
 bool ep_selected_share_pct(const struct wgendpoint *ep, const struct wgpeer *peer, size_t endpoint_index, double *out_pct);

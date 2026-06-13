@@ -139,7 +139,7 @@ static void print_endpoint_json(const struct wgendpoint *ep, const struct wgpeer
 		printf("        \"computed_weight\": %.4f,\n", ep->computed_weight);
 	else
 		printf("        \"computed_weight\": null,\n");
-	printf("        \"effective_weight\": %.4f,\n", ep_effective_weight(ep, peer));
+	printf("        \"effective_weight\": %.4f,\n", ep_tx_share(ep, peer, endpoint_index));
 	if (has_share)
 		printf("        \"selected_share_pct\": %.1f,\n", share_pct);
 	else
