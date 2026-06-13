@@ -30,7 +30,8 @@ double ep_effective_weight(const struct wgendpoint *ep, const struct wgpeer *pee
 		return WG_WEIGHT_DEFAULT;
 	if (peer && (peer->flags & WGPEER_HAS_THROUGHPUT_WEIGHTING) && peer->throughput_weighting &&
 	    ep->has_computed_weight)
-		return ep_weight_floor(ep->computed_weight);
+		/* Kernel already clamps computed_weight to [WG_WEIGHT_FLOOR, WG_WEIGHT_MAX]. */
+		return ep->computed_weight;
 	return ep_weight_floor(ep_static_weight(ep));
 }
 

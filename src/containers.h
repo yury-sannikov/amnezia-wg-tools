@@ -47,8 +47,8 @@ struct wgallowedip {
 #define WG_LOSS_HISTORY_SIZE 16
 
 #define WG_WEIGHT_DEFAULT 1.0
-#define WG_WEIGHT_FLOOR   0.1
-#define WG_WEIGHT_MAX     10.0
+#define WG_WEIGHT_FLOOR   0.01
+#define WG_WEIGHT_MAX     1.0
 
 struct wgendpoint {
 	struct sockaddr_storage addr;
